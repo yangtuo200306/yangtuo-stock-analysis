@@ -1,35 +1,60 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, ActivityIndicator,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../../App';
-import { api, getApiBaseUrl, setApiBaseUrl } from '../api/client';
+import { api, getApiBaseUrl, getBffApiKey, getMobileBackendUrl, setApiBaseUrl, setBffApiKey, setMobileBackendUrl } from '../api/client';
+import { removeSecure, getSecure, setSecure } from '../utils/storage';
+import { useTheme, colors, spacing, borderRadius, fontSize } from '../theme';
+import type { RootStackParamList } from '../types';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SettingsScreen() {
   const navigation = useNavigation<NavProp>();
+  const { theme } = useTheme();
   const [url, setUrl] = useState('');
   const [saved, setSaved] = useState(false);
 
-  // Login form
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLogin, setIsLogin] = useState(true);
   const [loggedIn, setLoggedIn] = useState(false);
   const [authing, setAuthing] = useState(false);
 
+  const [bffUrl, setBffUrl] = useState('');
+  const [bffApiKey, setBffApiKeyState] = useState('');
+  const [bffSaved, setBffSaved] = useState(false);
+
   useEffect(() => {
     setUrl(getApiBaseUrl());
-    // Check if already logged in
+
     (async () => {
       try {
-        const token = await AsyncStorage.getItem('@auth_token');
-        if (token) setLoggedIn(true);
-      } catch {}
+        const token = await getSecure('@auth_token');
+        setLoggedIn(Boolean(token));
+      } catch {
+        setLoggedIn(false);
+      }
+    })();
+
+    (async () => {
+      try {
+        const nextBffUrl = await getMobileBackendUrl();
+        const nextBffApiKey = await getBffApiKey();
+        setBffUrl(nextBffUrl);
+        setBffApiKeyState(nextBffApiKey);
+      } catch {
+        setBffUrl('http://localhost:8001');
+      }
     })();
   }, []);
 
@@ -39,10 +64,19 @@ export default function SettingsScreen() {
       Alert.alert('提示', '请输入服务器地址');
       return;
     }
+
     await setApiBaseUrl(trimmed);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     Alert.alert('成功', '服务器地址已更新');
+  };
+
+  const saveBffConfig = async () => {
+    await setMobileBackendUrl(bffUrl.trim() || 'http://localhost:8001');
+    await setBffApiKey(bffApiKey.trim());
+    setBffSaved(true);
+    setTimeout(() => setBffSaved(false), 2000);
+    Alert.alert('成功', '手机后端配置已保存');
   };
 
   const handleAuth = async () => {
@@ -50,6 +84,7 @@ export default function SettingsScreen() {
       Alert.alert('提示', '请输入用户名和密码');
       return;
     }
+
     setAuthing(true);
     try {
       const endpoint = isLogin ? '/api/v1/auth/login' : '/api/v1/auth/register';
@@ -58,9 +93,8 @@ export default function SettingsScreen() {
         password: password.trim(),
       });
       const data = res.data;
-      try {
-        await AsyncStorage.setItem('@auth_token', data.token || data.access_token || '');
-      } catch {}
+
+      await setSecure('@auth_token', data.token || data.access_token || '');
       setLoggedIn(true);
       Alert.alert('成功', isLogin ? '登录成功' : '注册成功');
       setUsername('');
@@ -73,165 +107,225 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = async () => {
-    try {
-      await AsyncStorage.removeItem('@auth_token');
-    } catch {}
+    await removeSecure('@auth_token');
     setLoggedIn(false);
     Alert.alert('已退出登录');
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Server URL */}
-      <Text style={styles.sectionTitle}>服务器地址</Text>
-      <TextInput
-        style={styles.input}
-        value={url}
-        onChangeText={setUrl}
-        placeholder="http://localhost:8000"
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <Text style={styles.hint}>
-        Android 模拟器: http://10.0.2.2:8000{'\n'}
-        真机测试: 使用电脑局域网 IP
-      </Text>
-      <TouchableOpacity style={styles.btn} onPress={saveUrl}>
-        <Text style={styles.btnText}>保存</Text>
-      </TouchableOpacity>
-      {saved && <Text style={styles.savedText}>✅ 已保存</Text>}
+    <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={{ padding: spacing.lg }}>
+      <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>共享后端地址</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
+          value={url}
+          onChangeText={setUrl}
+          placeholder="http://192.168.1.14:8000"
+          placeholderTextColor={theme.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <Text style={[styles.hint, { color: theme.textMuted }]}>真机测试请填写电脑局域网 IP；Android 模拟器通常使用 http://10.0.2.2:8000。</Text>
+        <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={saveUrl}>
+          <Text style={styles.btnText}>保存</Text>
+        </TouchableOpacity>
+        {saved && <Text style={[styles.savedText, { color: colors.primary }]}>已保存</Text>}
+      </View>
 
-      <View style={styles.divider} />
+      <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>手机后端 BFF</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
+          value={bffUrl}
+          onChangeText={setBffUrl}
+          placeholder="http://192.168.1.14:8001"
+          placeholderTextColor={theme.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <TextInput
+          style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text, marginTop: spacing.sm }]}
+          value={bffApiKey}
+          onChangeText={setBffApiKeyState}
+          placeholder="API Key，可选"
+          placeholderTextColor={theme.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+        />
+        <Text style={[styles.hint, { color: theme.textMuted }]}>BFF 用于手机端聚合行情、缓存和限流；未启动时核心分析功能仍走共享后端。</Text>
+        <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={saveBffConfig}>
+          <Text style={styles.btnText}>保存 BFF 配置</Text>
+        </TouchableOpacity>
+        {bffSaved && <Text style={[styles.savedText, { color: colors.primary }]}>已保存</Text>}
+      </View>
 
-      {/* History Entry */}
-      <Text style={styles.sectionTitle}>数据</Text>
-      <TouchableOpacity
-        style={styles.menuItem}
-        onPress={() => navigation.navigate('History')}
-      >
-        <Text style={styles.menuItemText}>📋 分析历史</Text>
-        <Text style={styles.menuArrow}>→</Text>
-      </TouchableOpacity>
+      <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <TouchableOpacity
+          style={[styles.menuItem, { borderBottomColor: theme.borderLight }]}
+          onPress={() => navigation.navigate('History')}
+        >
+          <Text style={[styles.menuItemText, { color: theme.text }]}>分析历史</Text>
+          <Text style={[styles.chevron, { color: theme.textMuted }]}>›</Text>
+        </TouchableOpacity>
+      </View>
 
-      <View style={styles.divider} />
-
-      {/* Auth */}
-      <Text style={styles.sectionTitle}>{loggedIn ? '账号' : '登录 / 注册'}</Text>
-      {loggedIn ? (
-        <View style={styles.loggedInCard}>
-          <Text style={styles.loggedInText}>✅ 已登录</Text>
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-            <Text style={styles.logoutBtnText}>退出登录</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.authCard}>
-          <View style={styles.authSwitch}>
+      <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{loggedIn ? '账号' : '登录 / 注册'}</Text>
+        {loggedIn ? (
+          <View style={{ alignItems: 'center' }}>
+            <Text style={[styles.loggedInText, { color: colors.success }]}>已登录</Text>
             <TouchableOpacity
-              style={[styles.authTab, isLogin && styles.authTabActive]}
-              onPress={() => setIsLogin(true)}
+              style={[styles.logoutBtn, { backgroundColor: colors.error }]}
+              onPress={handleLogout}
             >
-              <Text style={[styles.authTabText, isLogin && styles.authTabTextActive]}>登录</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.authTab, !isLogin && styles.authTabActive]}
-              onPress={() => setIsLogin(false)}
-            >
-              <Text style={[styles.authTabText, !isLogin && styles.authTabTextActive]}>注册</Text>
+              <Text style={styles.logoutBtnText}>退出登录</Text>
             </TouchableOpacity>
           </View>
-          <TextInput
-            style={styles.input}
-            value={username}
-            onChangeText={setUsername}
-            placeholder="用户名"
-            autoCapitalize="none"
-          />
-          <TextInput
-            style={[styles.input, { marginTop: 8 }]}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="密码"
-            secureTextEntry
-          />
-          <TouchableOpacity
-            style={[styles.btn, authing && styles.btnDisabled]}
-            onPress={handleAuth}
-            disabled={authing}
-          >
-            {authing ? (
-              <ActivityIndicator color="#FFF" size="small" />
-            ) : (
-              <Text style={styles.btnText}>{isLogin ? '登录' : '注册'}</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
+        ) : (
+          <View>
+            <View style={[styles.authSwitch, { backgroundColor: theme.inputBackground }]}>
+              <TouchableOpacity
+                style={[styles.authTab, isLogin && { backgroundColor: theme.elevated }]}
+                onPress={() => setIsLogin(true)}
+              >
+                <Text style={[styles.authTabText, { color: isLogin ? colors.primary : theme.textMuted }]}>登录</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.authTab, !isLogin && { backgroundColor: theme.elevated }]}
+                onPress={() => setIsLogin(false)}
+              >
+                <Text style={[styles.authTabText, { color: !isLogin ? colors.primary : theme.textMuted }]}>注册</Text>
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
+              value={username}
+              onChangeText={setUsername}
+              placeholder="用户名"
+              placeholderTextColor={theme.textMuted}
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text, marginTop: spacing.sm }]}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="密码"
+              placeholderTextColor={theme.textMuted}
+              secureTextEntry
+            />
+            <TouchableOpacity
+              style={[styles.btn, { backgroundColor: colors.primary }, authing && { opacity: 0.5 }]}
+              onPress={handleAuth}
+              disabled={authing}
+            >
+              {authing ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={styles.btnText}>{isLogin ? '登录' : '注册'}</Text>}
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
 
-      <View style={styles.divider} />
-
-      {/* About */}
-      <Text style={styles.sectionTitle}>关于</Text>
-      <View style={styles.aboutCard}>
-        <Text style={styles.appName}>智能股票分析</Text>
-        <Text style={styles.version}>版本 1.0.0</Text>
-        <Text style={styles.version}>Expo + React Native</Text>
-        <Text style={styles.version}>后端: FastAPI</Text>
+      <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border, alignItems: 'center' }]}>
+        <Text style={[styles.appName, { color: theme.text }]}>智能股票分析</Text>
+        <Text style={[styles.version, { color: theme.textMuted }]}>版本 1.0.0</Text>
+        <Text style={[styles.version, { color: theme.textMuted }]}>Expo + React Native</Text>
+        <Text style={[styles.version, { color: theme.textMuted }]}>后端: FastAPI</Text>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F2F2F7' },
-  content: { padding: 16 },
-  sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 8, color: '#3C3C43' },
+  sectionCard: {
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  sectionTitle: {
+    fontSize: fontSize.sm,
+    fontWeight: '600',
+    marginBottom: spacing.md,
+  },
   input: {
-    backgroundColor: '#FFF', borderRadius: 8, borderWidth: 1, borderColor: '#E5E5EA',
-    padding: 12, fontSize: 14,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    fontSize: fontSize.md,
   },
-  hint: { fontSize: 12, color: '#8E8E93', marginTop: 8, lineHeight: 18 },
+  hint: {
+    fontSize: fontSize.xs,
+    marginTop: spacing.sm,
+    lineHeight: 18,
+  },
   btn: {
-    backgroundColor: '#007AFF', borderRadius: 8, padding: 14,
-    alignItems: 'center', marginTop: 12,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.md,
   },
-  btnDisabled: { opacity: 0.5 },
-  btnText: { color: '#FFF', fontSize: 16, fontWeight: '600' },
-  savedText: { color: '#34C759', fontSize: 14, textAlign: 'center', marginTop: 8, fontWeight: '600' },
-  divider: { height: 1, backgroundColor: '#E5E5EA', marginVertical: 20 },
-
-  // Menu
+  btnText: {
+    color: '#FFF',
+    fontSize: fontSize.md,
+    fontWeight: '600',
+  },
+  savedText: {
+    fontSize: fontSize.sm,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
   menuItem: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#FFF', borderRadius: 12, padding: 16, elevation: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  menuItemText: { fontSize: 16, fontWeight: '500' },
-  menuArrow: { color: '#C7C7CC', fontSize: 18 },
-
-  // Auth
-  authCard: {
-    backgroundColor: '#FFF', borderRadius: 12, padding: 16, elevation: 1,
+  menuItemText: {
+    fontSize: fontSize.md,
+    fontWeight: '500',
   },
-  authSwitch: { flexDirection: 'row', marginBottom: 12, backgroundColor: '#F2F2F7', borderRadius: 8, padding: 2 },
-  authTab: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 6 },
-  authTabActive: { backgroundColor: '#FFF' },
-  authTabText: { fontSize: 14, fontWeight: '500', color: '#8E8E93' },
-  authTabTextActive: { color: '#007AFF' },
-
-  // Logged in
-  loggedInCard: {
-    backgroundColor: '#FFF', borderRadius: 12, padding: 16, alignItems: 'center', elevation: 1,
+  chevron: {
+    fontSize: 22,
   },
-  loggedInText: { fontSize: 16, fontWeight: '600', color: '#34C759', marginBottom: 12 },
+  authSwitch: {
+    flexDirection: 'row',
+    marginBottom: spacing.md,
+    borderRadius: borderRadius.md,
+    padding: 2,
+  },
+  authTab: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    borderRadius: borderRadius.md - 2,
+  },
+  authTabText: {
+    fontSize: fontSize.md,
+    fontWeight: '500',
+  },
+  loggedInText: {
+    fontSize: fontSize.lg,
+    fontWeight: '600',
+    marginBottom: spacing.md,
+  },
   logoutBtn: {
-    backgroundColor: '#FF3B30', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 32,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing['2xl'],
   },
-  logoutBtnText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
-
-  // About
-  aboutCard: {
-    backgroundColor: '#FFF', borderRadius: 12, padding: 16, elevation: 1,
+  logoutBtnText: {
+    color: '#FFF',
+    fontSize: fontSize.md,
+    fontWeight: '600',
   },
-  appName: { fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
-  version: { fontSize: 14, color: '#8E8E93', marginTop: 2 },
+  appName: {
+    fontSize: fontSize.xl,
+    fontWeight: '700',
+    marginBottom: spacing.xs,
+  },
+  version: {
+    fontSize: fontSize.sm,
+    marginTop: 2,
+  },
 });

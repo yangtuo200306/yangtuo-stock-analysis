@@ -1,10 +1,11 @@
-import React, { useState, useCallback, useRef } from 'react';
+﻿﻿﻿﻿import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StyleSheet, Alert,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../../App';
+import { useTheme, colors, spacing, borderRadius, fontSize } from '../theme';
+import type { RootStackParamList } from '../types';
 import { fetchHistory, deleteHistory, HistoryItem } from '../api/client';
 import { showToast } from '../components/Toast';
 
@@ -24,6 +25,7 @@ function groupByDate(items: HistoryItem[]): { date: string; items: HistoryItem[]
 
 export default function HistoryScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { theme } = useTheme();
   const [reports, setReports] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -94,10 +96,9 @@ export default function HistoryScreen() {
   };
 
   const clearAll = () => {
-    Alert.alert('清除所有历史', '确定要清除所有历史分析记录吗？（需要逐个调用后端删除）', [
+    Alert.alert('清除所有历史', '确定要清除所有历史分析记录吗？', [
       { text: '取消', style: 'cancel' },
       { text: '清除', style: 'destructive', onPress: () => {
-        // 逐个删除本地展示的记录
         Promise.all(reports.map(item => deleteHistory(item.id).catch(() => {})))
           .then(() => { setReports([]); setHasMore(false); showToast('已全部清除', 'success'); });
       }},
@@ -105,7 +106,9 @@ export default function HistoryScreen() {
   };
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" /></View>;
+    return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }}>
+      <ActivityIndicator size="large" color={colors.primary} />
+    </View>;
   }
 
   const grouped = groupByDate(reports);
@@ -116,34 +119,34 @@ export default function HistoryScreen() {
 
   if (reports.length === 0) {
     return (
-      <View style={styles.center}>
-        <Text style={{ color: '#8E8E93', fontSize: 15 }}>暂无历史分析记录</Text>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }}>
+        <Text style={{ color: theme.textMuted, fontSize: fontSize.md }}>暂无历史分析记录</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
       <FlatList
         data={flatData}
         keyExtractor={(entry, i) => `${entry.type}-${i}`}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         onEndReached={onEndReached}
         onEndReachedThreshold={0.3}
         ListFooterComponent={
           <>
-            {loadingMore && <ActivityIndicator size="small" style={{ margin: 16 }} />}
-            <TouchableOpacity style={styles.clearBtn} onPress={clearAll}>
-              <Text style={styles.clearBtnText}>清除所有历史</Text>
+            {loadingMore && <ActivityIndicator size="small" color={colors.primary} style={{ margin: spacing.lg }} />}
+            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: spacing.lg, marginBottom: spacing['2xl'] }} onPress={clearAll}>
+              <Text style={{ color: colors.error, fontSize: fontSize.md, fontWeight: '500' }}>清除所有历史</Text>
             </TouchableOpacity>
           </>
         }
         renderItem={({ item: entry }) => {
           if (entry.type === 'header') {
             return (
-              <View style={styles.dateHeader}>
-                <Text style={styles.dateText}>{entry.date}</Text>
-                <Text style={styles.dateCount}>共{entry.count}只</Text>
+              <View style={[styles.dateHeader, { borderBottomColor: theme.borderLight }]}>
+                <Text style={[styles.dateText, { color: theme.text }]}>{entry.date}</Text>
+                <Text style={[styles.dateCount, { color: theme.textMuted }]}>共{entry.count}只</Text>
               </View>
             );
           }
@@ -152,9 +155,11 @@ export default function HistoryScreen() {
           const score = item.sentiment_score;
           const time = item.created_at?.slice(11, 16) ?? '';
 
+          const adviceColor = advice === '买入' ? colors.up : advice === '卖出' ? colors.down : advice === '观望' ? colors.warning : theme.textMuted;
+
           return (
             <TouchableOpacity
-              style={styles.card}
+              style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}
               onLongPress={() => handleDelete(item)}
               onPress={() => navigation.navigate('AnalysisDetail', {
                 recordId: item.id,
@@ -165,17 +170,15 @@ export default function HistoryScreen() {
               })}
             >
               <View style={styles.cardLeft}>
-                <Text style={styles.cardName}>{item.stock_name}</Text>
-                <Text style={styles.cardCode}>{item.stock_code}</Text>
+                <Text style={[styles.cardName, { color: theme.text }]}>{item.stock_name}</Text>
+                <Text style={[styles.cardCode, { color: theme.textMuted }]}>{item.stock_code}</Text>
               </View>
               <View style={styles.cardRight}>
                 <View style={styles.cardRightRow}>
-                  <Text style={[styles.cardAdvice, { color: advice === '买入' ? '#FF3B30' : advice === '观望' ? '#FF9500' : '#8E8E93' }]}>
-                    {advice}
-                  </Text>
-                  {score != null && <Text style={styles.cardScore}>/{score}</Text>}
+                  <Text style={[styles.cardAdvice, { color: adviceColor }]}>{advice}</Text>
+                  {score != null && <Text style={[styles.cardScore, { color: colors.primary }]}>/{score}</Text>}
                 </View>
-                <Text style={styles.cardTime}>{time}</Text>
+                <Text style={[styles.cardTime, { color: theme.textMuted }]}>{time}</Text>
               </View>
             </TouchableOpacity>
           );
@@ -186,32 +189,25 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F2F2F7' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-
   dateHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8,
+    paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth, marginTop: spacing.sm,
+    marginHorizontal: spacing.lg, marginBottom: spacing.xs,
   },
-  dateText: { fontSize: 16, fontWeight: '600', color: '#3C3C43' },
-  dateCount: { fontSize: 13, color: '#8E8E93' },
-
+  dateText: { fontSize: fontSize.md, fontWeight: '600' },
+  dateCount: { fontSize: fontSize.sm },
   card: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#FFF', marginHorizontal: 12, marginVertical: 3,
-    padding: 14, borderRadius: 10, elevation: 1,
+    marginHorizontal: spacing.lg, marginVertical: 3,
+    padding: spacing.md, borderRadius: borderRadius.md, borderWidth: 1,
   },
   cardLeft: { flexDirection: 'row', alignItems: 'baseline' },
-  cardName: { fontSize: 15, fontWeight: '600' },
-  cardCode: { fontSize: 12, color: '#8E8E93', marginLeft: 6 },
+  cardName: { fontSize: fontSize.md, fontWeight: '600' },
+  cardCode: { fontSize: fontSize.sm, marginLeft: 6 },
   cardRight: { alignItems: 'flex-end' },
   cardRightRow: { flexDirection: 'row', alignItems: 'baseline' },
-  cardAdvice: { fontSize: 14, fontWeight: '600' },
-  cardScore: { fontSize: 14, fontWeight: '600', color: '#007AFF' },
-  cardTime: { fontSize: 11, color: '#C7C7CC', marginTop: 2 },
-
-  clearBtn: {
-    alignItems: 'center', paddingVertical: 16, marginBottom: 24,
-  },
-  clearBtnText: { color: '#FF3B30', fontSize: 14, fontWeight: '500' },
+  cardAdvice: { fontSize: fontSize.md, fontWeight: '600' },
+  cardScore: { fontSize: fontSize.md, fontWeight: '600' },
+  cardTime: { fontSize: fontSize.xs, marginTop: 2 },
 });

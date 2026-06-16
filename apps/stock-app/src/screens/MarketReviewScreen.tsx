@@ -1,18 +1,20 @@
-import React, { useState, useCallback } from 'react';
+﻿﻿﻿﻿import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, ActivityIndicator, TouchableOpacity, StyleSheet, RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { useTheme, colors, spacing, borderRadius, fontSize } from '../theme';
 import { fetchLatestMarketReview, triggerMarketReview, pollTaskStatus, type MarketReviewCache } from '../api/client';
 import { showToast } from '../components/Toast';
 
 export default function MarketReviewScreen() {
+  const { theme } = useTheme();
   const [cache, setCache] = useState<MarketReviewCache | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [aiExpanded, setAiExpanded] = useState(false); // AI 全文折叠
-  const [expandedIndex, setExpandedIndex] = useState<string | null>(null); // 展开的指数
+  const [aiExpanded, setAiExpanded] = useState(false);
+  const [expandedIndex, setExpandedIndex] = useState<string | null>(null);
 
   const loadCache = useCallback(async () => {
     setLoading(true);
@@ -20,7 +22,6 @@ export default function MarketReviewScreen() {
     try {
       const latest = await fetchLatestMarketReview();
       if (latest) {
-        // 指数行情数据由手机 BFF 提供（TODO: 后续接入 BFF 批量行情接口）
         setCache(latest);
       } else {
         setCache(null);
@@ -53,16 +54,18 @@ export default function MarketReviewScreen() {
   }, [loadCache]);
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" /></View>;
+    return <View style={[styles.center, { backgroundColor: theme.background }]}>
+      <ActivityIndicator size="large" color={colors.primary} />
+    </View>;
   }
 
   return (
     <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+      style={[styles.container, { backgroundColor: theme.background }]}
+      contentContainerStyle={[styles.content, { backgroundColor: theme.background }]}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
     >
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      {error && <Text style={[styles.errorText, { color: colors.down }]}>{error}</Text>}
 
       {/* 三指数卡片行 */}
       {cache?.indices && cache.indices.length > 0 ? (
@@ -72,15 +75,15 @@ export default function MarketReviewScreen() {
             return (
               <TouchableOpacity
                 key={i}
-                style={[styles.indexCard, { borderTopColor: isUp ? '#FF3B30' : '#34C759' }]}
+                style={[styles.indexCard, { backgroundColor: theme.card, borderTopColor: isUp ? colors.down : colors.up }]}
                 onPress={() => setExpandedIndex(expandedIndex === idx.name ? null : idx.name)}
               >
-                <Text style={styles.indexName}>{idx.name.replace('指数', '')}</Text>
-                <Text style={[styles.indexPrice, { color: isUp ? '#FF3B30' : '#34C759' }]}>
+                <Text style={[styles.indexName, { color: theme.textMuted }]}>{idx.name.replace('指数', '')}</Text>
+                <Text style={[styles.indexPrice, { color: isUp ? colors.down : colors.up }]}>
                   {idx.current.toFixed(2)}
                 </Text>
-                <View style={[styles.changeBadge, { backgroundColor: isUp ? '#FF3B3015' : '#34C75915' }]}>
-                  <Text style={[styles.changeText, { color: isUp ? '#FF3B30' : '#34C759' }]}>
+                <View style={[styles.changeBadge, { backgroundColor: isUp ? (colors.down + '20') : (colors.up + '20') }]}>
+                  <Text style={[styles.changeText, { color: isUp ? colors.down : colors.up }]}>
                     {isUp ? '🟢' : '🔴'}{isUp ? '+' : ''}{idx.change_pct.toFixed(2)}%
                   </Text>
                 </View>
@@ -89,39 +92,39 @@ export default function MarketReviewScreen() {
           })}
         </View>
       ) : (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>暂无指数数据</Text>
+        <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.emptyText, { color: theme.textMuted }]}>暂无指数数据</Text>
         </View>
       )}
 
       {/* 展开的指数详情 */}
       {expandedIndex && cache?.indices && (
-        <View style={styles.indexDetailCard}>
-          <Text style={styles.indexDetailTitle}>{expandedIndex}</Text>
-          <Text style={styles.indexDetailHint}>分时图数据暂不可用（需额外数据源）</Text>
+        <View style={[styles.indexDetailCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.indexDetailTitle, { color: theme.text }]}>{expandedIndex}</Text>
+          <Text style={[styles.indexDetailHint, { color: theme.textMuted }]}>分时图数据暂不可用（需额外数据源）</Text>
         </View>
       )}
 
       {/* 市场概况 */}
       {(cache?.advance_count !== undefined || cache?.limit_up !== undefined) && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📈 市场概况</Text>
-          <View style={styles.statsGrid}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>📈 市场概况</Text>
+          <View style={[styles.statsGrid, { backgroundColor: theme.card, borderColor: theme.border }]}>
             <View style={styles.statItem}>
-              <Text style={[styles.statNum, { color: '#FF3B30' }]}>{cache.advance_count ?? '--'}</Text>
-              <Text style={styles.statLabel}>上涨</Text>
+              <Text style={[styles.statNum, { color: colors.down }]}>{cache.advance_count ?? '--'}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>上涨</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={[styles.statNum, { color: '#34C759' }]}>{cache.decline_count ?? '--'}</Text>
-              <Text style={styles.statLabel}>下跌</Text>
+              <Text style={[styles.statNum, { color: colors.up }]}>{cache.decline_count ?? '--'}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>下跌</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={[styles.statNum, { color: '#FF9500' }]}>{cache.limit_up ?? '--'}</Text>
-              <Text style={styles.statLabel}>涨停</Text>
+              <Text style={[styles.statNum, { color: colors.warning }]}>{cache.limit_up ?? '--'}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>涨停</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={[styles.statNum, { color: '#8E8E93' }]}>{cache.limit_down ?? '--'}</Text>
-              <Text style={styles.statLabel}>跌停</Text>
+              <Text style={[styles.statNum, { color: theme.textMuted }]}>{cache.limit_down ?? '--'}</Text>
+              <Text style={[styles.statLabel, { color: theme.textMuted }]}>跌停</Text>
             </View>
           </View>
         </View>
@@ -131,13 +134,13 @@ export default function MarketReviewScreen() {
       {cache?.sectors && cache.sectors.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>🔥 热门板块</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>🔥 热门板块</Text>
           </View>
           <View style={styles.sectorsGrid}>
             {cache.sectors.slice(0, 8).map((s, i) => (
-              <View key={i} style={styles.sectorCard}>
-                <Text style={styles.sectorName} numberOfLines={1}>{s.name}</Text>
-                <Text style={[styles.sectorChange, { color: (s.change_pct ?? 0) >= 0 ? '#FF3B30' : '#34C759' }]}>
+              <View key={i} style={[styles.sectorCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <Text style={[styles.sectorName, { color: theme.text }]} numberOfLines={1}>{s.name}</Text>
+                <Text style={[styles.sectorChange, { color: (s.change_pct ?? 0) >= 0 ? colors.down : colors.up }]}>
                   {(s.change_pct ?? 0) >= 0 ? '🟢' : '🔴'}{s.change_pct?.toFixed(1) ?? '0.0'}%
                 </Text>
               </View>
@@ -150,17 +153,17 @@ export default function MarketReviewScreen() {
       {cache?.summary && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>🤖 AI大盘复盘</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>🤖 AI大盘复盘</Text>
             {cache.created_at && (
-              <Text style={styles.aiTime}>{cache.created_at.slice(0, 10)}</Text>
+              <Text style={[styles.aiTime, { color: theme.textMuted }]}>{cache.created_at.slice(0, 10)}</Text>
             )}
           </View>
-          <View style={styles.aiCard}>
-            <Text style={styles.aiSummary} numberOfLines={aiExpanded ? undefined : 4}>
+          <View style={[styles.aiCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.aiSummary, { color: theme.textSecondary }]} numberOfLines={aiExpanded ? undefined : 4}>
               {cache.summary}
             </Text>
             <TouchableOpacity onPress={() => setAiExpanded(!aiExpanded)}>
-              <Text style={styles.aiExpand}>
+              <Text style={[styles.aiExpand, { color: colors.primary }]}>
                 {aiExpanded ? '收起 ▲' : '查看完整报告 →'}
               </Text>
             </TouchableOpacity>
@@ -169,8 +172,8 @@ export default function MarketReviewScreen() {
       )}
 
       {!cache && !error && (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>暂无大盘数据，下拉刷新获取最新分析</Text>
+        <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.emptyText, { color: theme.textMuted }]}>暂无大盘数据，下拉刷新获取最新分析</Text>
         </View>
       )}
 
@@ -180,18 +183,18 @@ export default function MarketReviewScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F2F2F7' },
+  container: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  content: { padding: 16 },
-  errorText: { color: '#FF3B30', fontSize: 14, textAlign: 'center', marginBottom: 12 },
+  content: { padding: spacing.lg },
+  errorText: { fontSize: 14, textAlign: 'center', marginBottom: spacing.md },
 
   // Indices row
   indicesRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   indexCard: {
-    flex: 1, backgroundColor: '#FFF', borderRadius: 12, padding: 12,
-    alignItems: 'center', elevation: 1, borderTopWidth: 3,
+    flex: 1, borderRadius: 12, padding: 12,
+    alignItems: 'center', borderTopWidth: 3,
   },
-  indexName: { fontSize: 12, color: '#8E8E93', marginBottom: 4 },
+  indexName: { fontSize: 12, marginBottom: 4 },
   indexPrice: { fontSize: 16, fontWeight: 'bold' },
   changeBadge: {
     marginTop: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4,
@@ -200,52 +203,54 @@ const styles = StyleSheet.create({
 
   // Index detail
   indexDetailCard: {
-    backgroundColor: '#FFF', borderRadius: 12, padding: 16, marginBottom: 8, elevation: 1,
-    alignItems: 'center',
+    borderRadius: 12, padding: 16, marginBottom: 8,
+    alignItems: 'center', borderWidth: StyleSheet.hairlineWidth,
   },
   indexDetailTitle: { fontSize: 15, fontWeight: '600', marginBottom: 4 },
-  indexDetailHint: { fontSize: 12, color: '#C7C7CC' },
+  indexDetailHint: { fontSize: 12 },
 
   // Sections
-  section: { marginTop: 16 },
+  section: { marginTop: spacing.lg },
   sectionHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: 8,
   },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#3C3C43' },
+  sectionTitle: { fontSize: 16, fontWeight: '600' },
 
   // Stats grid
   statsGrid: {
-    flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 12,
-    padding: 16, elevation: 1,
+    flexDirection: 'row', borderRadius: 12, padding: spacing.lg,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   statItem: { flex: 1, alignItems: 'center' },
   statNum: { fontSize: 22, fontWeight: 'bold' },
-  statLabel: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
+  statLabel: { fontSize: 12, marginTop: 2 },
 
   // Sectors grid
   sectorsGrid: {
     flexDirection: 'row', flexWrap: 'wrap', gap: 8,
   },
   sectorCard: {
-    width: '48%', backgroundColor: '#FFF', borderRadius: 10, padding: 12,
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 1,
+    width: '48%', borderRadius: 10, padding: 12,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
   },
   sectorName: { fontSize: 13, flex: 1 },
   sectorChange: { fontSize: 12, fontWeight: '600' },
 
   // AI card
   aiCard: {
-    backgroundColor: '#FFF', borderRadius: 12, padding: 16, elevation: 1,
+    borderRadius: 12, padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  aiSummary: { fontSize: 14, color: '#3C3C43', lineHeight: 22 },
-  aiExpand: { color: '#007AFF', fontSize: 13, fontWeight: '500', marginTop: 8 },
+  aiSummary: { fontSize: 14, lineHeight: 22 },
+  aiExpand: { fontSize: 13, fontWeight: '500', marginTop: 8 },
 
   // Empty
   emptyCard: {
-    backgroundColor: '#FFF', borderRadius: 12, padding: 40, alignItems: 'center',
-    marginTop: 16, elevation: 1,
+    borderRadius: 12, padding: 40, alignItems: 'center',
+    marginTop: spacing.lg, borderWidth: StyleSheet.hairlineWidth,
   },
-  emptyText: { color: '#8E8E93', fontSize: 14 },
-  aiTime: { fontSize: 12, color: '#8E8E93' },
+  emptyText: { fontSize: 14 },
+  aiTime: { fontSize: 12 },
 });

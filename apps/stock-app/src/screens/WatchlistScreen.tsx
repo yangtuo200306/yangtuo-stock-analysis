@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+﻿﻿﻿﻿import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput, ActivityIndicator,
   RefreshControl, StyleSheet, Modal, Alert, ScrollView, Animated,
@@ -6,7 +6,8 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { RootStackParamList } from '../../App';
+import { useTheme, colors, spacing, borderRadius, fontSize } from '../theme';
+import type { RootStackParamList } from '../types';
 import {
   fetchWatchlist, fetchQuotes, addToWatchlist, removeFromWatchlist,
   searchStocks, type StockQuote, type StockSearchResult,
@@ -24,7 +25,7 @@ interface StockItem {
   quote?: StockQuote;
 }
 
-// 热门搜索（硬编码常用标的）
+// 热门搜索（硬编码常用）
 const HOT_STOCKS = [
   { name: '贵州茅台', code: '600519' },
   { name: '宁德时代', code: '300750' },
@@ -35,12 +36,12 @@ const HOT_STOCKS = [
 
 export default function WatchlistScreen() {
   const navigation = useNavigation<NavProp>();
+  const { theme } = useTheme();
   const [stocks, setStocks] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [addingCodes, setAddingCodes] = useState<Set<string>>(new Set());
   const [inTrading, setInTrading] = useState(isTradingHours);
-  // const priceAnim = useRef(new Animated.Value(0)).current;
 
   // Modal 搜索
   const [showSearch, setShowSearch] = useState(false);
@@ -53,17 +54,13 @@ export default function WatchlistScreen() {
   const loadData = useCallback(async () => {
     let cached: string | null = null;
     try {
-      // 1. 尝试加载本地缓存（若有）→ 立即展示
       cached = await AsyncStorage.getItem(WATCHLIST_CACHE_KEY);
       if (cached) {
         setStocks(JSON.parse(cached));
         setLoading(false);
       }
-
-      // 2. 拉后端最新数据
       const codes = await fetchWatchlist();
       if (codes.length > 0) {
-        // 无缓存时先用代码占位
         if (!cached) {
           setStocks(codes.map(c => ({ code: c, name: '' })));
           setLoading(false);
@@ -89,17 +86,13 @@ export default function WatchlistScreen() {
     }
   }, []);
 
-  // 焦点进入时加载 + 启动轮询
   useFocusEffect(
     useCallback(() => {
       loadData();
-      // 交易时段 30s 轮询
       const tradingTimer = setInterval(() => {
         const trading = isTradingHours();
         setInTrading(trading);
-        if (trading) {
-          loadData();
-        }
+        if (trading) loadData();
       }, 30000);
       return () => clearInterval(tradingTimer);
     }, [loadData])
@@ -111,7 +104,6 @@ export default function WatchlistScreen() {
     setRefreshing(false);
   };
 
-  // 搜索
   const handleSearchInput = (text: string) => {
     setSearchText(text);
     if (searchTimer) clearTimeout(searchTimer);
@@ -134,7 +126,6 @@ export default function WatchlistScreen() {
     setSearchTimer(timer);
   };
 
-  // 添加股票
   const handleAddStock = async (name: string, code: string) => {
     try {
       await addToWatchlist(code);
@@ -146,9 +137,7 @@ export default function WatchlistScreen() {
       setSearchText('');
       setSearchResults([]);
       setShowSearch(false);
-      // 重新加载并标记加载状态
       await loadData();
-      // 3 秒后移除加载标记
       setTimeout(() => {
         setAddingCodes(prev => {
           const next = new Set(prev);
@@ -171,30 +160,30 @@ export default function WatchlistScreen() {
   };
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" /></View>;
+    return <View style={[styles.center, { backgroundColor: theme.background }]}><ActivityIndicator size="large" color={colors.primary} /></View>;
   }
 
   return (
-    <View style={styles.container}>
-      {/* + 添加按钮在右上角 */}
-      <View style={styles.headerBar}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* Header */}
+      <View style={[styles.headerBar, { backgroundColor: theme.headerBackground, borderBottomColor: theme.border }]}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>自选股</Text>
-          <Text style={[styles.tradingTag, { color: inTrading ? '#34C759' : '#8E8E93' }]}>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>自选股</Text>
+          <Text style={[styles.tradingTag, { color: inTrading ? '#22C55E' : theme.textMuted }]}>
             {inTrading ? '● 交易中' : '已收盘'}
           </Text>
         </View>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowSearch(true)}>
+        <TouchableOpacity style={[styles.addBtn, { backgroundColor: colors.primary }]} onPress={() => setShowSearch(true)}>
           <Text style={styles.addBtnText}>+</Text>
         </TouchableOpacity>
       </View>
 
       {/* 首次自选为空时的引导横幅 */}
       {stocks.length === 0 && (
-        <TouchableOpacity style={styles.emptyGuideBanner} onPress={() => setShowSearch(true)}>
-          <Text style={styles.emptyGuideTitle}>📭 暂无自选股</Text>
-          <Text style={styles.emptyGuideSub}>添加股票，获取AI分析</Text>
-          <Text style={styles.emptyGuideBtn}>快速添加热门股票 →</Text>
+        <TouchableOpacity style={[styles.emptyGuideBanner, { backgroundColor: theme.card, borderColor: theme.border }]} onPress={() => setShowSearch(true)}>
+          <Text style={[styles.emptyGuideTitle, { color: theme.text }]}>📭 暂无自选股</Text>
+          <Text style={[styles.emptyGuideSub, { color: theme.textMuted }]}>添加股票，获取AI分析</Text>
+          <Text style={[styles.emptyGuideBtn, { color: colors.primary, backgroundColor: theme.inputBackground }]}>快速添加热门股票 →</Text>
         </TouchableOpacity>
       )}
 
@@ -202,7 +191,7 @@ export default function WatchlistScreen() {
       <FlatList
         data={stocks}
         keyExtractor={item => item.code}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         contentContainerStyle={styles.listContent}
         renderItem={({ item }) => {
           const change = item.quote?.change_percent ?? 0;
@@ -211,53 +200,52 @@ export default function WatchlistScreen() {
 
           return (
             <TouchableOpacity
-              style={styles.card}
+              style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}
               onLongPress={() => {
-              Alert.alert('操作', `${item.name} (${item.code})`, [
-                
-                { text: '删除', style: 'destructive', onPress: () => handleDeleteStock(item.code) },
-                { text: '取消', style: 'cancel' },
-              ]);
-            }}
-            onPress={() => navigation.navigate('AnalysisDetail', {
-              recordId: 0,
-              stockCode: item.code,
-              stockName: item.name,
-              price: item.quote?.current_price,
-              changePct: item.quote?.change_percent,
-            })}
-          >
-            {isLoading && (
-              <View style={styles.loadingOverlay}>
-                <ActivityIndicator color="#007AFF" size="small" />
-                <Text style={styles.loadingText}>正在获取分析...</Text>
+                Alert.alert('操作', `${item.name} (${item.code})`, [
+                  { text: '删除', style: 'destructive', onPress: () => handleDeleteStock(item.code) },
+                  { text: '取消', style: 'cancel' },
+                ]);
+              }}
+              onPress={() => navigation.navigate('AnalysisDetail', {
+                recordId: 0,
+                stockCode: item.code,
+                stockName: item.name,
+                price: item.quote?.current_price,
+                changePct: item.quote?.change_percent,
+              })}
+            >
+              {isLoading && (
+                <View style={[styles.loadingOverlay, { backgroundColor: theme.surface + 'D9' }]}>
+                  <ActivityIndicator color={colors.primary} size="small" />
+                  <Text style={[styles.loadingText, { color: colors.primary }]}>正在获取分析...</Text>
+                </View>
+              )}
+              {/* 第一行：名称 + 代码 */}
+              <View style={styles.cardRow1}>
+                <View style={styles.nameRow}>
+                  <Text style={[styles.stockName, { color: theme.text }]}>{item.name || item.code}</Text>
+                  <Text style={[styles.stockCode, { color: theme.textMuted }]}>{item.code}</Text>
+                </View>
               </View>
-            )}
-            {/* 第一行：名称 + 代码 */}
-            <View style={styles.cardRow1}>
-              <View style={styles.nameRow}>
-                <Text style={styles.stockName}>{item.name || item.code}</Text>
-                <Text style={styles.stockCode}>{item.code}</Text>
+
+              {/* 第二行：价格 + 涨跌幅 */}
+              <View style={styles.cardRow2}>
+                <Text style={[styles.price, { color: isUp ? colors.down : colors.up }]}>
+                  ¥{item.quote?.current_price?.toFixed(2) ?? '--'}
+                </Text>
+                <Text style={[styles.change, { color: isUp ? colors.down : colors.up }]}>
+                  {isUp ? '▲' : '▼'} {isUp ? '+' : ''}{change.toFixed(2)}%
+                </Text>
               </View>
-            </View>
 
-            {/* 第二行：价格 + 涨跌幅 */}
-            <View style={styles.cardRow2}>
-              <Text style={[styles.price, { color: isUp ? '#FF3B30' : '#34C759' }]}>
-                ¥{item.quote?.current_price?.toFixed(2) ?? '--'}
-              </Text>
-              <Text style={[styles.change, { color: isUp ? '#FF3B30' : '#34C759' }]}>
-                {isUp ? '▲' : '▼'} {isUp ? '+' : ''}{change.toFixed(2)}%
-              </Text>
-            </View>
+              <View style={[styles.divider, { backgroundColor: theme.borderLight }]} />
 
-            <View style={styles.divider} />
-
-            {/* 第三行：占位提示（真实数据需 AI 分析后展示） */}
-            <View style={styles.cardRow3}>
-              <Text style={styles.tagLabel}>点击查看 AI 分析报告</Text>
-            </View>
-          </TouchableOpacity>
+              {/* 第三行：占位提示 */}
+              <View style={styles.cardRow3}>
+                <Text style={[styles.tagLabel, { color: theme.textMuted }]}>点击查看 AI 分析报告</Text>
+              </View>
+            </TouchableOpacity>
           );
         }}
         ListFooterComponent={stocks.length > 0 ? undefined : <View style={{ height: 8 }} />}
@@ -265,30 +253,30 @@ export default function WatchlistScreen() {
 
       {/* 添加自选 Modal */}
       <Modal visible={showSearch} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={[styles.modalOverlay, { backgroundColor: theme.overlay }]}>
+          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
             {/* 标题栏 */}
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>添加自选股</Text>
+            <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>添加自选股</Text>
               <TouchableOpacity onPress={() => { setShowSearch(false); setSearchText(''); setSearchResults([]); }}>
-                <Text style={styles.modalCancel}>取消</Text>
+                <Text style={[styles.modalCancel, { color: colors.primary }]}>取消</Text>
               </TouchableOpacity>
             </View>
 
             {/* 搜索输入 */}
-            <View style={styles.searchInputRow}>
+            <View style={[styles.searchInputRow, { backgroundColor: theme.inputBackground }]}>
               <Text style={styles.searchIcon}>🔍</Text>
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, { color: theme.text }]}
                 value={searchText}
                 onChangeText={handleSearchInput}
                 placeholder="输入代码/名称/拼音"
-                placeholderTextColor="#A0A0A0"
+                placeholderTextColor={theme.textMuted}
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoFocus
               />
-              {searching && <ActivityIndicator size="small" style={{ marginRight: 8 }} />}
+              {searching && <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 8 }} />}
             </View>
 
             {/* 搜索结果 */}
@@ -299,28 +287,28 @@ export default function WatchlistScreen() {
                 style={styles.searchResultsList}
                 renderItem={({ item }) => (
                   <TouchableOpacity
-                    style={styles.searchResultRow}
+                    style={[styles.searchResultRow, { borderBottomColor: theme.border }]}
                     onPress={() => handleAddStock(item.name, item.code)}
                   >
                     <View style={styles.searchResultInfo}>
-                      <Text style={styles.searchResultName}>{item.name}</Text>
-                      <Text style={styles.searchResultCode}>{item.code}</Text>
+                      <Text style={[styles.searchResultName, { color: theme.text }]}>{item.name}</Text>
+                      <Text style={[styles.searchResultCode, { color: theme.textMuted }]}>{item.code}</Text>
                     </View>
-                    <Text style={styles.addText}>+ 添加</Text>
+                    <Text style={[styles.addText, { color: colors.primary }]}>+ 添加</Text>
                   </TouchableOpacity>
                 )}
               />
             ) : !searching && searchText.trim().length === 0 ? (
               <ScrollView style={styles.searchResultsList}>
-                {/* 热门股票（大卡片网格） */}
-                <Text style={styles.sectionLabel}>热门股票</Text>
+                {/* 热门股票 */}
+                <Text style={[styles.sectionLabel, { color: theme.textSecondary }]}>热门股票</Text>
                 <View style={styles.hotStockGrid}>
                   {HOT_STOCKS.map(s => (
-                    <View key={s.code} style={styles.hotStockCard}>
-                      <Text style={styles.hotStockName}>{s.name}</Text>
-                      <Text style={styles.hotStockCode}>{s.code}</Text>
+                    <View key={s.code} style={[styles.hotStockCard, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}>
+                      <Text style={[styles.hotStockName, { color: theme.text }]}>{s.name}</Text>
+                      <Text style={[styles.hotStockCode, { color: theme.textMuted }]}>{s.code}</Text>
                       <TouchableOpacity
-                        style={styles.hotStockAddBtn}
+                        style={[styles.hotStockAddBtn, { backgroundColor: colors.primary }]}
                         onPress={() => handleAddStock(s.name, s.code)}
                       >
                         <Text style={styles.hotStockAddText}>+ 添加</Text>
@@ -332,24 +320,23 @@ export default function WatchlistScreen() {
                 {/* 最近添加 */}
                 {recentAdded.length > 0 && (
                   <>
-                    <Text style={[styles.sectionLabel, { marginTop: 20 }]}>最近添加</Text>
+                    <Text style={[styles.sectionLabel, { color: theme.textSecondary, marginTop: spacing.lg }]}>最近添加</Text>
                     {recentAdded.map(r => (
                       <TouchableOpacity
                         key={r.code}
-                        style={styles.recentRow}
+                        style={[styles.recentRow, { borderBottomColor: theme.border }]}
                         onPress={() => handleAddStock(r.name, r.code)}
                       >
-                        <Text style={styles.recentName}>{r.name}</Text>
-                        <Text style={styles.recentCode}>{r.code}</Text>
-                        <Text style={styles.addText}>+ 添加</Text>
+                        <Text style={[styles.recentName, { color: theme.text }]}>{r.name}</Text>
+                        <Text style={[styles.recentCode, { color: theme.textMuted }]}>{r.code}</Text>
+                        <Text style={[styles.addText, { color: colors.primary }]}>+ 添加</Text>
                       </TouchableOpacity>
                     ))}
                   </>
                 )}
 
                 {/* 搜索提示 */}
-                <Text style={styles.searchMoreText}>输入股票代码或名称进行搜索</Text>
-
+                <Text style={[styles.searchMoreText, { color: theme.textMuted }]}>输入股票代码或名称进行搜索</Text>
                 <View style={{ height: 32 }} />
               </ScrollView>
             ) : null}
@@ -361,66 +348,57 @@ export default function WatchlistScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F2F2F7' },
+  container: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyContainer: { flex: 1 },
   listContent: { paddingTop: 4, paddingBottom: 16 },
 
   // Header
   headerBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#F8F9FA',
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E5EA',
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#3C3C43' },
+  headerTitle: { fontSize: 20, fontWeight: 'bold' },
   tradingTag: { fontSize: 11, fontWeight: '500' },
   addBtn: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: '#007AFF', justifyContent: 'center', alignItems: 'center',
+    justifyContent: 'center', alignItems: 'center',
   },
   addBtnText: { color: '#FFF', fontSize: 20, fontWeight: 'bold', lineHeight: 22 },
 
   // Card
   card: {
-    backgroundColor: '#FFF', marginHorizontal: 12, marginVertical: 4,
-    padding: 14, borderRadius: 12, elevation: 1, position: 'relative',
-    overflow: 'hidden',
+    marginHorizontal: 12, marginVertical: 4,
+    padding: 14, borderRadius: 12, position: 'relative',
+    overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth,
   },
   loadingOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(255,255,255,0.85)', zIndex: 10,
-    justifyContent: 'center', alignItems: 'center', flexDirection: 'row',
+    zIndex: 10, justifyContent: 'center', alignItems: 'center', flexDirection: 'row',
   },
-  loadingText: { marginLeft: 8, color: '#007AFF', fontSize: 13, fontWeight: '500' },
+  loadingText: { marginLeft: 8, fontSize: 13, fontWeight: '500' },
   cardRow1: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   nameRow: { flexDirection: 'row', alignItems: 'baseline' },
   stockName: { fontSize: 16, fontWeight: '700' },
-  stockCode: { fontSize: 12, color: '#8E8E93', marginLeft: 8 },
-  badgeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  adviceBadge: { fontSize: 12, fontWeight: '600' },
-  scoreText: { fontSize: 12, fontWeight: '700', color: '#007AFF' },
+  stockCode: { fontSize: 12, marginLeft: 8 },
   cardRow2: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
   price: { fontSize: 20, fontWeight: 'bold' },
   change: { fontSize: 14, fontWeight: '600' },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#E5E5EA', marginVertical: 8 },
+  divider: { height: StyleSheet.hairlineWidth, marginVertical: 8 },
   cardRow3: { flexDirection: 'column', gap: 4 },
-  tagGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  tagLabel: { fontSize: 12, color: '#8E8E93' },
-  tagDivider: { fontSize: 12, color: '#D1D1D6', marginHorizontal: 2 },
-  signalDot: { width: 6, height: 6, borderRadius: 3 },
+  tagLabel: { fontSize: 12 },
 
-  // Empty guide banner
+  // Empty guide
   emptyGuideBanner: {
     alignItems: 'center', paddingVertical: 48, marginHorizontal: 16, marginTop: 24,
-    backgroundColor: '#FFF', borderRadius: 16, elevation: 1,
+    borderRadius: 16, borderWidth: StyleSheet.hairlineWidth,
   },
   emptyGuideTitle: { fontSize: 20, marginBottom: 8 },
-  emptyGuideSub: { fontSize: 14, color: '#8E8E93', marginBottom: 20 },
+  emptyGuideSub: { fontSize: 14, marginBottom: 20 },
   emptyGuideBtn: {
-    fontSize: 15, color: '#007AFF', fontWeight: '600',
-    paddingHorizontal: 20, paddingVertical: 10,
-    backgroundColor: '#F2F2F7', borderRadius: 20, overflow: 'hidden',
+    fontSize: 15, fontWeight: '600',
+    paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, overflow: 'hidden',
   },
 
   // Hot stock grid (in modal)
@@ -428,48 +406,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, gap: 8,
   },
   hotStockCard: {
-    width: '47%', backgroundColor: '#F8F9FA', borderRadius: 12,
-    padding: 14, marginBottom: 8,
+    width: '47%', borderRadius: 12, padding: 14, marginBottom: 8,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   hotStockName: { fontSize: 14, fontWeight: '600' },
-  hotStockCode: { fontSize: 11, color: '#8E8E93', marginTop: 2, marginBottom: 10 },
+  hotStockCode: { fontSize: 11, marginTop: 2, marginBottom: 10 },
   hotStockAddBtn: {
     alignSelf: 'flex-start',
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14,
-    backgroundColor: '#007AFF',
   },
   hotStockAddText: { color: '#FFF', fontSize: 12, fontWeight: '600' },
 
   // Search more
-  searchMoreBtn: {
-    alignItems: 'center', paddingVertical: 14, marginTop: 8,
-    marginHorizontal: 16, borderWidth: 1, borderColor: '#007AFF',
-    borderRadius: 10,
-  },
-  searchMoreText: { color: '#007AFF', fontSize: 14, fontWeight: '500' },
+  searchMoreText: { fontSize: 14, fontWeight: '500', textAlign: 'center', paddingVertical: 14 },
 
   // Modal
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalContent: {
-    backgroundColor: '#FFF', borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    borderTopLeftRadius: 16, borderTopRightRadius: 16,
     minHeight: '60%', maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E5EA',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   modalTitle: { fontSize: 17, fontWeight: '600' },
-  modalCancel: { fontSize: 15, color: '#007AFF' },
+  modalCancel: { fontSize: 15 },
 
   // Search in modal
   searchInputRow: {
     flexDirection: 'row', alignItems: 'center',
-    margin: 12, backgroundColor: '#F2F2F7', borderRadius: 10,
-    paddingHorizontal: 12,
+    margin: 12, borderRadius: 10, paddingHorizontal: 12,
   },
   searchIcon: { fontSize: 16, marginRight: 8 },
   searchInput: { flex: 1, paddingVertical: 12, fontSize: 15 },
@@ -477,26 +445,20 @@ const styles = StyleSheet.create({
   searchResultRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 12, paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E5EA',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   searchResultInfo: {},
   searchResultName: { fontSize: 15, fontWeight: '500' },
-  searchResultCode: { fontSize: 13, color: '#8E8E93', marginTop: 1 },
-  addText: { color: '#007AFF', fontSize: 14, fontWeight: '600' },
+  searchResultCode: { fontSize: 13, marginTop: 1 },
+  addText: { fontSize: 14, fontWeight: '600' },
 
   // Hot & Recent
-  sectionLabel: { fontSize: 14, fontWeight: '600', color: '#3C3C43', paddingHorizontal: 16, paddingTop: 12, marginBottom: 8 },
-  hotRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, gap: 8 },
-  hotChip: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: '#F2F2F7',
-  },
-  hotChipText: { fontSize: 13, color: '#3C3C43' },
+  sectionLabel: { fontSize: 14, fontWeight: '600', paddingHorizontal: 16, paddingTop: 12, marginBottom: 8 },
   recentRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingVertical: 10, paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E5EA',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   recentName: { fontSize: 14, fontWeight: '500' },
-  recentCode: { fontSize: 12, color: '#8E8E93', flex: 1, marginLeft: 8 },
+  recentCode: { fontSize: 12, flex: 1, marginLeft: 8 },
 });

@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { ActivityIndicator, View, Text, StatusBar, Image } from 'react-native';
+import { ActivityIndicator, View, Text, StatusBar } from 'react-native';
+import { ThemeProvider, useTheme, colors, spacing, fontSize } from './src/theme';
 import { initApiBaseUrl } from './src/api/client';
 import WatchlistScreen from './src/screens/WatchlistScreen';
 import AskStockScreen from './src/screens/AskStockScreen';
@@ -11,39 +12,44 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import AnalysisDetailScreen from './src/screens/AnalysisDetailScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import AboutFeedbackScreen from './src/screens/AboutFeedbackScreen';
+import StockDetailScreen from './src/screens/StockDetailScreen';
 import ToastProvider from './src/components/Toast';
-
-export type RootStackParamList = {
-  MainTabs: undefined;
-  AnalysisDetail: {
-    recordId: number;
-    stockCode?: string;
-    stockName?: string;
-    price?: number;
-    changePct?: number;
-  };
-  History: undefined;
-  Settings: undefined;
-};
-
-export type TabParamList = {
-  Watchlist: undefined;
-  AskStock: undefined;
-  Market: undefined;
-  Profile: undefined;
-};
+import { StyleSheet } from 'react-native';
+import type { RootStackParamList, TabParamList } from './src/types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();
 
 function MainTabs() {
+  const { theme, isDark } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={{
-        tabBarActiveTintColor: '#007AFF',
-        tabBarInactiveTintColor: '#8E8E93',
-        headerStyle: { backgroundColor: '#F8F9FA' },
-        headerTitleStyle: { fontWeight: 'bold' },
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: theme.textMuted,
+        tabBarStyle: {
+          backgroundColor: theme.tabBar,
+          borderTopColor: theme.tabBarBorder,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          paddingBottom: 4,
+          paddingTop: 4,
+          height: 56,
+        },
+        tabBarLabelStyle: {
+          fontSize: fontSize.xs,
+          fontWeight: '500',
+        },
+        headerStyle: {
+          backgroundColor: theme.headerBackground,
+        },
+        headerTitleStyle: {
+          fontWeight: '600',
+          fontSize: fontSize.lg,
+          color: theme.headerText,
+        },
+        headerTintColor: theme.headerText,
       }}
     >
       <Tab.Screen
@@ -87,8 +93,9 @@ function MainTabs() {
   );
 }
 
-export default function App() {
+function AppContent() {
   const [loading, setLoading] = useState(true);
+  const { theme, isDark } = useTheme();
 
   useEffect(() => {
     initApiBaseUrl().finally(() => setLoading(false));
@@ -96,48 +103,72 @@ export default function App() {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FA' }}>
-        <Text style={{ fontSize: 36, marginBottom: 16 }}>📈</Text>
-        <Text style={{ fontSize: 20, fontWeight: 'bold', color: '#3C3C43' }}>智能股票分析</Text>
-        <Text style={{ fontSize: 13, color: '#8E8E93', marginTop: 8 }}>加载中...</Text>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }}>
+        <Text style={{ fontSize: 48, marginBottom: 16 }}>📈</Text>
+        <Text style={{ fontSize: 22, fontWeight: '700', color: theme.text, marginBottom: 8 }}>
+          智能股票分析
+        </Text>
+        <ActivityIndicator size="small" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <NavigationContainer>
-      <StatusBar barStyle="dark-content" />
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <ToastProvider />
-      <Stack.Navigator>
+      <Stack.Navigator
+        screenOptions={{
+          headerStyle: { backgroundColor: theme.headerBackground },
+          headerTitleStyle: { fontWeight: '600', fontSize: fontSize.lg, color: theme.headerText },
+          headerTintColor: theme.headerText,
+          headerBackTitle: '返回',
+          contentStyle: { backgroundColor: theme.background },
+        }}
+      >
         <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
         <Stack.Screen
           name="AnalysisDetail"
           component={AnalysisDetailScreen}
           options={({ route }) => ({
-            headerTitle: route.params.stockName
-              ? `${route.params.stockName} (${route.params.stockCode})`
+            headerTitle: route.params?.stock?.name
+              ? `${route.params.stock.name} (${route.params.stock.code})`
               : '分析详情',
-            headerBackTitle: '返回',
+          })}
+        />
+        <Stack.Screen
+          name="StockDetail"
+          component={StockDetailScreen}
+          options={({ route }) => ({
+            headerTitle: route.params?.name || '个股详情',
           })}
         />
         <Stack.Screen
           name="History"
           component={HistoryScreen}
-          options={{
-            headerTitle: '历史记录',
-            headerBackTitle: '返回',
-          }}
+          options={{ headerTitle: '历史记录' }}
         />
         <Stack.Screen
           name="Settings"
           component={SettingsScreen}
-          options={{
-            headerTitle: '设置',
-            headerBackTitle: '返回',
-          }}
+          options={{ headerTitle: '设置' }}
+        />
+        <Stack.Screen
+          name="AboutFeedback"
+          component={AboutFeedbackScreen}
+          options={{ headerTitle: '关于/反馈' }}
         />
       </Stack.Navigator>
-    </NavigationContainer>
+    </View>
   );
 }
 
+export default function App() {
+  return (
+    <ThemeProvider>
+      <NavigationContainer>
+        <AppContent />
+      </NavigationContainer>
+    </ThemeProvider>
+  );
+}

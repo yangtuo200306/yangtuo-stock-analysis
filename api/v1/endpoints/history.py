@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 ===================================
 历史记录接口
@@ -159,6 +159,102 @@ def get_history_list(
             detail={
                 "error": "internal_error",
                 "message": f"查询历史列表失败: {str(e)}"
+            }
+        )
+
+
+def _delete_history_records_by_ids(
+    request: DeleteHistoryRequest,
+    db_manager: DatabaseManager,
+) -> DeleteHistoryResponse:
+    record_ids = sorted({record_id for record_id in request.record_ids if record_id is not None})
+    if not record_ids:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_request",
+                "message": "record_ids 不能为空"
+            }
+        )
+
+    try:
+        service = HistoryService(db_manager)
+        deleted = service.delete_history_records(record_ids)
+        return DeleteHistoryResponse(deleted=deleted)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除历史记录失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "internal_error",
+                "message": f"删除历史记录失败: {str(e)}"
+            }
+        )
+
+
+@router.delete(
+    "/batch-delete",
+    response_model=DeleteHistoryResponse,
+    responses={
+        200: {"description": "删除成功"},
+        400: {"description": "请求参数错误", "model": ErrorResponse},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="批量删除历史分析记录",
+    description="按历史记录主键 ID 批量删除分析历史"
+)
+def batch_delete_history_records(
+    request: DeleteHistoryRequest = Body(...),
+    db_manager: DatabaseManager = Depends(get_database_manager)
+) -> DeleteHistoryResponse:
+    """
+    按主键 ID 批量删除历史分析记录。
+    """
+    return _delete_history_records_by_ids(request, db_manager)
+
+
+
+@router.delete(
+    "/{record_id}",
+    response_model=DeleteHistoryResponse,
+    responses={
+        200: {"description": "删除成功"},
+        404: {"description": "未找到记录", "model": ErrorResponse},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="删除单条历史分析记录",
+    description="按历史记录主键 ID 删除单条分析历史"
+)
+def delete_single_history_record(
+    record_id: int,
+    db_manager: DatabaseManager = Depends(get_database_manager)
+) -> DeleteHistoryResponse:
+    """
+    按主键 ID 删除单条历史分析记录。
+    """
+    try:
+        service = HistoryService(db_manager)
+        deleted = service.delete_history_records([record_id])
+        if deleted == 0:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "not_found",
+                    "message": f"未找到 id={record_id} 的分析记录"
+                }
+            )
+        return DeleteHistoryResponse(deleted=deleted)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除单条历史记录失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "internal_error",
+                "message": f"删除失败: {str(e)}"
             }
         )
 
