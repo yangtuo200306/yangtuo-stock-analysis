@@ -85,3 +85,10 @@ static/
 /apps/dsa-desktop/dist/
 /apps/dsa-desktop/node_modules/
 docs/specs/
+
+# Local Gitee mobile app sync workspace
+_gitee_stock_app_sync/
+_gitee_stock_app_sync_backup_*/
+
+# Local agent skill workspace
+.agents/

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿import axios, { AxiosError, type AxiosInstance } from "axios";
+import axios, { AxiosError, type AxiosInstance } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { setSecure, getSecure, removeSecure } from "../utils/storage";
 
