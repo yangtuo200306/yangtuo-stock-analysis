@@ -1,4 +1,4 @@
-﻿import React, { Component, type ErrorInfo, type ReactNode } from "react";
+import React, { Component, type ErrorInfo, type ReactNode } from "react";
 import {
   View,
   Text,
@@ -39,14 +39,14 @@ interface ErrorFallbackProps {
   theme?: "dark" | "light";
 }
 
-export function ErrorFallback({ error, retry }: ErrorFallbackProps) {
+export function ErrorFallback({ retry }: ErrorFallbackProps) {
   return (
     <View style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.icon}>{'\u26A0\uFE0F'}</Text>
         <Text style={styles.title}>页面出现异常</Text>
         <Text style={styles.subtitle}>
-          {error.message || "发生了未知错误"}
+          请重试或返回后重新进入页面。
         </Text>
         <TouchableOpacity style={styles.retryBtn} onPress={retry}>
           <Text style={styles.retryBtnText}>重试</Text>
@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
     textAlign: "center",
     lineHeight: 22,
-    marginBottom: spacing["2xl"],
+    marginBottom: spacing.lg,
   },
   retryBtn: {
     backgroundColor: colors.primary,

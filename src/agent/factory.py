@@ -27,7 +27,7 @@ Usage::
 import copy
 import logging
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from src.config import AGENT_MAX_STEPS_DEFAULT
 
@@ -195,6 +195,24 @@ def get_tool_registry():
     return _TOOL_REGISTRY
 
 
+def filter_tool_registry(registry, tool_names: Optional[Iterable[str]] = None):
+    """Return a registry restricted to the requested tool names."""
+    if tool_names is None:
+        return registry
+
+    from src.agent.tools.registry import ToolRegistry
+
+    filtered = ToolRegistry()
+    for name in tool_names:
+        tool_def = registry.get(name)
+        if tool_def:
+            filtered.register(tool_def)
+        else:
+            logger.warning("[AgentFactory] requested tool '%s' not found in registry", name)
+    logger.info("[AgentFactory] ToolRegistry filtered: %s", filtered.list_names())
+    return filtered
+
+
 def get_skill_manager(config=None):
     """Return a deepcopy-clone of the cached SkillManager prototype.
 
@@ -294,7 +312,11 @@ def resolve_skill_prompt_state(config=None, skills: Optional[List[str]] = None) 
     )
 
 
-def build_agent_executor(config=None, skills: Optional[List[str]] = None):
+def build_agent_executor(
+    config=None,
+    skills: Optional[List[str]] = None,
+    tool_names: Optional[Iterable[str]] = None,
+):
     """Build and return a configured AgentExecutor (or future orchestrator).
 
     When ``AGENT_ARCH=multi``, this returns an orchestrator that manages
@@ -307,6 +329,7 @@ def build_agent_executor(config=None, skills: Optional[List[str]] = None):
         skills: Skill ids to activate.  When *None* falls back to
                 ``config.agent_skills``; if that is also empty falls back to
                 the central default skill set.
+        tool_names: Optional tool whitelist for this executor.
 
     Returns:
         A ready-to-call :class:`src.agent.executor.AgentExecutor` instance.
@@ -319,7 +342,7 @@ def build_agent_executor(config=None, skills: Optional[List[str]] = None):
 
     from src.agent.llm_adapter import LLMToolAdapter
 
-    registry = get_tool_registry()
+    registry = filter_tool_registry(get_tool_registry(), tool_names)
     prompt_state = resolve_skill_prompt_state(config, skills=skills)
     skill_manager = prompt_state.skill_manager
     logger.info(

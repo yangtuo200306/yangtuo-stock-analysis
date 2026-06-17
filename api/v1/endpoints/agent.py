@@ -40,6 +40,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+FAST_CHAT_TOOL_NAMES = [
+    "get_realtime_quote",
+    "get_daily_history",
+    "analyze_trend",
+    "calculate_ma",
+]
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -49,12 +57,18 @@ class ChatRequest(BaseModel):
         default=None,
         validation_alias=AliasChoices("skills", "strategies"),
     )
+    mode: str = "deep"
     context: Optional[Dict[str, Any]] = None  # Previous analysis context for data reuse
 
     @property
     def effective_skills(self) -> Optional[List[str]]:
         """Return skill ids from the unified request shape."""
         return self.skills
+
+    @property
+    def tool_names(self) -> Optional[List[str]]:
+        return FAST_CHAT_TOOL_NAMES if self.mode == "fast" else None
+
 
 class ChatResponse(BaseModel):
     success: bool
@@ -159,7 +173,7 @@ async def agent_chat(request: ChatRequest):
     
     try:
         skills = request.effective_skills
-        executor = _build_executor(config, skills or None)
+        executor = _build_executor(config, skills or None, request.tool_names)
 
         # Pass explicit skills into context for the orchestrator.
         # Direct assignment so caller-provided skills always take precedence
@@ -167,6 +181,8 @@ async def agent_chat(request: ChatRequest):
         ctx = dict(request.context or {})
         if skills is not None:
             ctx["skills"] = skills
+        if request.mode == "fast":
+            ctx["agent_chat_mode"] = "fast"
 
         # Offload the blocking call to a thread to avoid blocking the event loop.
         loop = asyncio.get_running_loop()
@@ -270,10 +286,14 @@ async def send_chat_to_notification(request: SendChatRequest):
     return {"success": True}
 
 
-def _build_executor(config, skills: Optional[List[str]] = None):
+def _build_executor(
+    config,
+    skills: Optional[List[str]] = None,
+    tool_names: Optional[List[str]] = None,
+):
     """Build and return a configured AgentExecutor (sync helper)."""
     from src.agent.factory import build_agent_executor
-    return build_agent_executor(config, skills=skills)
+    return build_agent_executor(config, skills=skills, tool_names=tool_names)
 
 
 async def _run_research_in_background(
@@ -396,6 +416,8 @@ async def agent_chat_stream(request: ChatRequest):
     stream_ctx = dict(request.context or {})
     if skills is not None:
         stream_ctx["skills"] = skills
+    if request.mode == "fast":
+        stream_ctx["agent_chat_mode"] = "fast"
 
     def progress_callback(event: dict):
         # Enrich tool events with display names
@@ -406,7 +428,7 @@ async def agent_chat_stream(request: ChatRequest):
 
     def run_sync():
         try:
-            executor = _build_executor(config, skills or None)
+            executor = _build_executor(config, skills or None, request.tool_names)
             result = executor.chat(
                 message=request.message,
                 session_id=session_id,

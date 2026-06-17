@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import { render, fireEvent } from "@testing-library/react-native";
 import { Text } from "react-native";
 import { ErrorBoundary, ErrorFallback } from "../ErrorBoundary";
@@ -42,7 +42,7 @@ describe("ErrorBoundary", () => {
     );
 
     expect(getByText("页面出现异常")).toBeTruthy();
-    expect(getByText("Test crash")).toBeTruthy();
+    expect(getByText("请重试或返回后重新进入页面。")).toBeTruthy();
     expect(getByText("重试")).toBeTruthy();
   });
 
@@ -86,7 +86,7 @@ describe("ErrorFallback", () => {
     );
 
     expect(getByText("页面出现异常")).toBeTruthy();
-    expect(getByText("Something broke")).toBeTruthy();
+    expect(getByText("请重试或返回后重新进入页面。")).toBeTruthy();
 
     fireEvent.press(getByText("重试"));
     expect(retry).toHaveBeenCalled();

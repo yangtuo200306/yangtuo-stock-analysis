@@ -155,6 +155,7 @@ export default function AnalysisDetailScreen() {
   const [elapsed, setElapsed] = useState(0);
   const [showShareSheet, setShowShareSheet] = useState(false);
   const cancelledRef = useRef(false);
+  const analysisControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!recordId || recordId <= 0 || routeReport) {
@@ -179,10 +180,18 @@ export default function AnalysisDetailScreen() {
     };
   }, [recordId, routeReport]);
 
+  useEffect(() => {
+    return () => {
+      analysisControllerRef.current?.abort();
+    };
+  }, []);
+
   const startAnalysis = async () => {
     if (!stockCode) return;
 
     cancelledRef.current = false;
+    analysisControllerRef.current?.abort();
+    analysisControllerRef.current = new AbortController();
     setError(null);
     setReport(null);
     setPhase('queued');
@@ -200,7 +209,7 @@ export default function AnalysisDetailScreen() {
         const stepIdx = progress < 25 ? 0 : progress < 50 ? 1 : progress < 75 ? 2 : 3;
         setCurrentStep(stepIdx);
         setProgressText(ANALYSIS_STEPS[stepIdx]?.label ?? '正在分析...');
-      });
+      }, analysisControllerRef.current.signal);
 
       if (cancelledRef.current) return;
 
@@ -219,6 +228,7 @@ export default function AnalysisDetailScreen() {
       }
     } finally {
       clearInterval(timer);
+      analysisControllerRef.current = null;
     }
   };
 
@@ -228,6 +238,13 @@ export default function AnalysisDetailScreen() {
     } catch {
       navigation.navigate('MainTabs');
     }
+  };
+
+  const continueInBackground = () => {
+    cancelledRef.current = true;
+    analysisControllerRef.current?.abort();
+    showToast('分析已在后台继续，可稍后到历史记录查看', 'info');
+    navigation.navigate('MainTabs');
   };
 
   const reportStockName = stockName || report?.meta?.stock_name || '--';
@@ -306,7 +323,7 @@ export default function AnalysisDetailScreen() {
 
           {phase === 'queued' && (
             <>
-              <Text style={[styles.queuedText, { color: theme.textMuted }]}>分析请求已提交，请稍候。</Text>
+              <Text style={[styles.queuedText, { color: theme.textMuted }]}>正在提交分析请求，请稍候。</Text>
               <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 16 }} />
             </>
           )}
@@ -330,16 +347,23 @@ export default function AnalysisDetailScreen() {
               })}
 
               <Text style={[styles.elapsedText, { color: theme.textMuted }]}>已等待 {elapsed} 秒</Text>
-              <TouchableOpacity
-                style={[styles.cancelBtn, { backgroundColor: theme.inputBackground }]}
-                onPress={() => {
-                  cancelledRef.current = true;
-                  setPhase('idle');
-                  navigation.goBack();
-                }}
-              >
-                <Text style={[styles.cancelBtnText, { color: theme.textSecondary }]}>取消分析</Text>
-              </TouchableOpacity>
+              {elapsed >= 45 && (
+                <Text style={[styles.slowHint, { color: elapsed >= 90 ? colors.warning : theme.textMuted }]}>模型响应较慢，你可以留在此页等待，也可以让任务在后台继续。</Text>
+              )}
+              <View style={styles.backgroundActions}>
+                <TouchableOpacity
+                  style={[styles.backgroundBtn, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}
+                  onPress={continueInBackground}
+                >
+                  <Text style={[styles.backgroundBtnText, { color: theme.textSecondary }]}>后台继续，返回自选</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.historyBtn, { backgroundColor: theme.card, borderColor: colors.primary }]}
+                  onPress={() => navigation.navigate('History')}
+                >
+                  <Text style={[styles.historyBtnText, { color: colors.primary }]}>查看历史记录</Text>
+                </TouchableOpacity>
+              </View>
             </>
           )}
 
@@ -599,8 +623,12 @@ const styles = StyleSheet.create({
   stepLabel: { fontSize: 14, fontWeight: '500' },
   stepProgress: { fontSize: 11, marginTop: 1 },
   elapsedText: { fontSize: 12, textAlign: 'center', marginTop: 8 },
-  cancelBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8, alignSelf: 'center', marginTop: 16 },
-  cancelBtnText: { fontSize: 14, fontWeight: '500' },
+  slowHint: { fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 8 },
+  backgroundActions: { marginTop: 16, gap: 8 },
+  backgroundBtn: { paddingHorizontal: 18, paddingVertical: 11, borderRadius: 10, alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, marginTop: 16 },
+  backgroundBtnText: { fontSize: 14, fontWeight: '600' },
+  historyBtn: { paddingHorizontal: 18, paddingVertical: 11, borderRadius: 10, alignItems: 'center', borderWidth: StyleSheet.hairlineWidth },
+  historyBtnText: { fontSize: 14, fontWeight: '600' },
   failedText: { fontSize: 14, textAlign: 'center', marginBottom: 16 },
   shareOverlay: {
     position: 'absolute',

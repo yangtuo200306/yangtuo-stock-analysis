@@ -136,7 +136,11 @@ export interface AnalysisReportDetails {
 
 export type TabParamList = {
   Watchlist: undefined;
-  AskStock: undefined;
+  AskStock: {
+    stockCode?: string;
+    stockName?: string;
+    prefillQuestion?: string;
+  } | undefined;
   Market: undefined;
   Profile: undefined;
 };

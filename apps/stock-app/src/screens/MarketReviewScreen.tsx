@@ -1,10 +1,10 @@
-﻿﻿﻿﻿import React, { useState, useCallback } from 'react';
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, ActivityIndicator, TouchableOpacity, StyleSheet, RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTheme, colors, spacing, borderRadius, fontSize } from '../theme';
-import { fetchLatestMarketReview, triggerMarketReview, pollTaskStatus, type MarketReviewCache } from '../api/client';
+import { fetchLatestMarketReview, triggerMarketReview, pollTaskDone, type MarketReviewCache } from '../api/client';
 import { showToast } from '../components/Toast';
 
 export default function MarketReviewScreen() {
@@ -12,6 +12,7 @@ export default function MarketReviewScreen() {
   const [cache, setCache] = useState<MarketReviewCache | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aiExpanded, setAiExpanded] = useState(false);
   const [expandedIndex, setExpandedIndex] = useState<string | null>(null);
@@ -38,20 +39,33 @@ export default function MarketReviewScreen() {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     setError(null);
-    showToast('正在触发大盘复盘分析...', 'info');
     try {
-      const taskId = await triggerMarketReview();
-      showToast('AI 大盘分析中，请稍候...', 'info');
-      await pollTaskStatus(taskId);
       await loadCache();
-      showToast('大盘分析完成', 'success');
-    } catch (e: any) {
-      setError(e.message || '刷新失败');
-      showToast(e.message || '大盘分析失败', 'error');
+    } catch {
+      setError('刷新指数数据失败');
     } finally {
       setRefreshing(false);
     }
   }, [loadCache]);
+
+  const handleAiReview = useCallback(async () => {
+    if (aiGenerating) return;
+    setAiGenerating(true);
+    setError(null);
+    showToast('正在触发大盘复盘分析...', 'info');
+    try {
+      const taskId = await triggerMarketReview();
+      showToast('AI 大盘分析中，可稍后回来查看', 'info');
+      await pollTaskDone(taskId);
+      await loadCache();
+      showToast('大盘分析完成', 'success');
+    } catch (e: any) {
+      setError(e.message || '大盘分析失败');
+      showToast(e.message || '大盘分析失败', 'error');
+    } finally {
+      setAiGenerating(false);
+    }
+  }, [aiGenerating, loadCache]);
 
   if (loading) {
     return <View style={[styles.center, { backgroundColor: theme.background }]}>
@@ -68,9 +82,9 @@ export default function MarketReviewScreen() {
       {error && <Text style={[styles.errorText, { color: colors.down }]}>{error}</Text>}
 
       {/* 三指数卡片行 */}
-      {cache?.indices && cache.indices.length > 0 ? (
-        <View style={styles.indicesRow}>
-          {cache.indices.slice(0, 3).map((idx, i) => {
+      <View style={styles.indicesRow}>
+        {cache?.indices && cache.indices.length > 0 ? (
+          cache.indices.slice(0, 3).map((idx, i) => {
             const isUp = idx.change_pct >= 0;
             return (
               <TouchableOpacity
@@ -89,21 +103,34 @@ export default function MarketReviewScreen() {
                 </View>
               </TouchableOpacity>
             );
-          })}
-        </View>
-      ) : (
-        <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Text style={[styles.emptyText, { color: theme.textMuted }]}>暂无指数数据</Text>
-        </View>
-      )}
+          })
+        ) : (
+          <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.emptyText, { color: theme.textMuted }]}>暂无指数数据</Text>
+          </View>
+        )}
+      </View>
 
       {/* 展开的指数详情 */}
       {expandedIndex && cache?.indices && (
         <View style={[styles.indexDetailCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <Text style={[styles.indexDetailTitle, { color: theme.text }]}>{expandedIndex}</Text>
-          <Text style={[styles.indexDetailHint, { color: theme.textMuted }]}>分时图数据暂不可用（需额外数据源）</Text>
+          <Text style={[styles.indexDetailHint, { color: theme.textMuted }]}>指数详情正在建设中</Text>
         </View>
       )}
+
+      {/* AI 大盘复盘入口 */}
+      <View style={styles.aiReviewRow}>
+        <TouchableOpacity
+          style={[styles.aiReviewBtn, { backgroundColor: colors.primary, opacity: aiGenerating ? 0.68 : 1 }]}
+          onPress={handleAiReview}
+          disabled={aiGenerating}
+        >
+          {aiGenerating ? <ActivityIndicator color="#FFF" size="small" /> : null}
+          <Text style={styles.aiReviewBtnText}>{aiGenerating ? 'AI 复盘生成中...' : '生成 AI 大盘复盘'}</Text>
+        </TouchableOpacity>
+        <Text style={[styles.aiReviewHint, { color: theme.textMuted }]}>分析行情、板块、趋势，耗时约 1～3 分钟，可稍后回来查看</Text>
+      </View>
 
       {/* 市场概况 */}
       {(cache?.advance_count !== undefined || cache?.limit_up !== undefined) && (
@@ -208,6 +235,10 @@ const styles = StyleSheet.create({
   },
   indexDetailTitle: { fontSize: 15, fontWeight: '600', marginBottom: 4 },
   indexDetailHint: { fontSize: 12 },
+  aiReviewRow: { marginTop: spacing.md, alignItems: 'center' },
+  aiReviewBtn: { width: '100%', borderRadius: 12, paddingVertical: spacing.md, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  aiReviewBtnText: { color: '#FFF', fontSize: fontSize.md, fontWeight: '700' },
+  aiReviewHint: { fontSize: 12, marginTop: 8, textAlign: 'center' },
 
   // Sections
   section: { marginTop: spacing.lg },

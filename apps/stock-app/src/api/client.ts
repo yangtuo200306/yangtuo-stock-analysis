@@ -441,6 +441,22 @@ export async function pollTaskStatus(
   throw new ApiError("分析任务超时：模型响应过慢，请稍后重试或切换更快的模型", 0);
 }
 
+/** Poll a task until it finishes, without requiring an analysis report payload. */
+export async function pollTaskDone(taskId: string): Promise<void> {
+  const MAX_ATTEMPTS = 90;
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    const delayMs = Math.min(1000 * Math.pow(2, i), 8000);
+    const res = await api.get<TaskStatusResponse>(`/api/v1/analysis/status/${taskId}`);
+    const { status, error } = res.data;
+    if (status === "completed") return;
+    if (status === "failed") {
+      throw new ApiError(normalizeAnalysisError(error), 0);
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  throw new ApiError("分析任务超时：模型响应过慢，请稍后重试", 0);
+}
+
 /** Convenience: submit analysis and wait for completion. */
 export async function analyzeStock(
   code: string,

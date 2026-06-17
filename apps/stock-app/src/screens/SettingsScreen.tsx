@@ -9,17 +9,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { api, getApiBaseUrl, getBffApiKey, getMobileBackendUrl, setApiBaseUrl, setBffApiKey, setMobileBackendUrl } from '../api/client';
 import { removeSecure, getSecure, setSecure } from '../utils/storage';
 import { useTheme, colors, spacing, borderRadius, fontSize } from '../theme';
-import type { RootStackParamList } from '../types';
-
-type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function SettingsScreen() {
-  const navigation = useNavigation<NavProp>();
   const { theme } = useTheme();
   const [url, setUrl] = useState('');
   const [saved, setSaved] = useState(false);
@@ -33,6 +27,11 @@ export default function SettingsScreen() {
   const [bffUrl, setBffUrl] = useState('');
   const [bffApiKey, setBffApiKeyState] = useState('');
   const [bffSaved, setBffSaved] = useState(false);
+  const [developerExpanded, setDeveloperExpanded] = useState(false);
+  const [testingShared, setTestingShared] = useState(false);
+  const [testingBff, setTestingBff] = useState(false);
+  const [sharedStatus, setSharedStatus] = useState('');
+  const [bffStatus, setBffStatus] = useState('');
 
   useEffect(() => {
     setUrl(getApiBaseUrl());
@@ -79,6 +78,32 @@ export default function SettingsScreen() {
     Alert.alert('成功', '手机后端配置已保存');
   };
 
+  const testConnection = async (
+    targetUrl: string,
+    setTesting: (value: boolean) => void,
+    setStatus: (value: string) => void,
+  ) => {
+    const trimmed = targetUrl.trim().replace(/\/$/, '');
+    if (!trimmed) {
+      setStatus('请先填写服务地址');
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    setTesting(true);
+    setStatus('正在测试连接...');
+    try {
+      const res = await fetch(`${trimmed}/health`, { signal: controller.signal });
+      setStatus(res.ok ? '连接正常' : '服务有响应，但状态异常');
+    } catch {
+      setStatus('连接失败，请检查地址、网络或服务是否启动');
+    } finally {
+      clearTimeout(timer);
+      setTesting(false);
+    }
+  };
+
   const handleAuth = async () => {
     if (!username.trim() || !password.trim()) {
       Alert.alert('提示', '请输入用户名和密码');
@@ -114,61 +139,73 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.background }} contentContainerStyle={{ padding: spacing.lg }}>
-      <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>共享后端地址</Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
-          value={url}
-          onChangeText={setUrl}
-          placeholder="http://192.168.1.14:8000"
-          placeholderTextColor={theme.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <Text style={[styles.hint, { color: theme.textMuted }]}>真机测试请填写电脑局域网 IP；Android 模拟器通常使用 http://10.0.2.2:8000。</Text>
-        <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={saveUrl}>
-          <Text style={styles.btnText}>保存</Text>
+      <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}> 
+        <TouchableOpacity style={styles.devHeader} onPress={() => setDeveloperExpanded(prev => !prev)}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary, marginBottom: 4 }]}>开发者设置</Text>
+            <Text style={[styles.hint, { color: theme.textMuted, marginTop: 0 }]}>后端地址、BFF 和 API Key。普通使用无需修改。</Text>
+          </View>
+          <Text style={[styles.chevron, { color: theme.textMuted }]}>{developerExpanded ? '⌃' : '⌄'}</Text>
         </TouchableOpacity>
-        {saved && <Text style={[styles.savedText, { color: colors.primary }]}>已保存</Text>}
       </View>
 
-      <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>手机后端 BFF</Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
-          value={bffUrl}
-          onChangeText={setBffUrl}
-          placeholder="http://192.168.1.14:8001"
-          placeholderTextColor={theme.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <TextInput
-          style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text, marginTop: spacing.sm }]}
-          value={bffApiKey}
-          onChangeText={setBffApiKeyState}
-          placeholder="API Key，可选"
-          placeholderTextColor={theme.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-        />
-        <Text style={[styles.hint, { color: theme.textMuted }]}>BFF 用于手机端聚合行情、缓存和限流；未启动时核心分析功能仍走共享后端。</Text>
-        <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={saveBffConfig}>
-          <Text style={styles.btnText}>保存 BFF 配置</Text>
-        </TouchableOpacity>
-        {bffSaved && <Text style={[styles.savedText, { color: colors.primary }]}>已保存</Text>}
-      </View>
+      {developerExpanded && (
+        <>
+          <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}> 
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>共享后端地址</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
+              value={url}
+              onChangeText={setUrl}
+              placeholder="http://192.168.1.14:8000"
+              placeholderTextColor={theme.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Text style={[styles.hint, { color: theme.textMuted }]}>真机测试请填写电脑局域网 IP；Android 模拟器通常使用 http://10.0.2.2:8000。</Text>
+            <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={saveUrl}>
+              <Text style={styles.btnText}>保存</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.secondaryBtn, { borderColor: theme.border }]} onPress={() => testConnection(url, setTestingShared, setSharedStatus)} disabled={testingShared}>
+              <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>{testingShared ? '测试中...' : '测试共享后端连接'}</Text>
+            </TouchableOpacity>
+            {saved && <Text style={[styles.savedText, { color: colors.primary }]}>已保存</Text>}
+            {sharedStatus ? <Text style={[styles.statusText, { color: sharedStatus.includes('正常') ? colors.success : colors.warning }]}>{sharedStatus}</Text> : null}
+          </View>
 
-      <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <TouchableOpacity
-          style={[styles.menuItem, { borderBottomColor: theme.borderLight }]}
-          onPress={() => navigation.navigate('History')}
-        >
-          <Text style={[styles.menuItemText, { color: theme.text }]}>分析历史</Text>
-          <Text style={[styles.chevron, { color: theme.textMuted }]}>›</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}> 
+            <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>手机后端 BFF</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
+              value={bffUrl}
+              onChangeText={setBffUrl}
+              placeholder="http://192.168.1.14:8001"
+              placeholderTextColor={theme.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text, marginTop: spacing.sm }]}
+              value={bffApiKey}
+              onChangeText={setBffApiKeyState}
+              placeholder="API Key，可选"
+              placeholderTextColor={theme.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+            />
+            <Text style={[styles.hint, { color: theme.textMuted }]}>BFF 用于手机端聚合行情、缓存和限流；未启动时核心分析功能仍走共享后端。</Text>
+            <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={saveBffConfig}>
+              <Text style={styles.btnText}>保存 BFF 配置</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.secondaryBtn, { borderColor: theme.border }]} onPress={() => testConnection(bffUrl, setTestingBff, setBffStatus)} disabled={testingBff}>
+              <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>{testingBff ? '测试中...' : '测试 BFF 连接'}</Text>
+            </TouchableOpacity>
+            {bffSaved && <Text style={[styles.savedText, { color: colors.primary }]}>已保存</Text>}
+            {bffStatus ? <Text style={[styles.statusText, { color: bffStatus.includes('正常') ? colors.success : colors.warning }]}>{bffStatus}</Text> : null}
+          </View>
+        </>
+      )}
 
       <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>{loggedIn ? '账号' : '登录 / 注册'}</Text>
@@ -247,6 +284,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: spacing.md,
   },
+  devHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   input: {
     borderRadius: borderRadius.md,
     borderWidth: 1,
@@ -269,21 +311,27 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     fontWeight: '600',
   },
+  secondaryBtn: {
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  secondaryBtnText: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+  },
+  statusText: {
+    fontSize: fontSize.sm,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    fontWeight: '500',
+  },
   savedText: {
     fontSize: fontSize.sm,
     textAlign: 'center',
     marginTop: spacing.sm,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  menuItemText: {
-    fontSize: fontSize.md,
-    fontWeight: '500',
   },
   chevron: {
     fontSize: 22,

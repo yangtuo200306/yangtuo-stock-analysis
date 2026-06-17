@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 股票 APP 专属后端（BFF）
 
@@ -29,7 +29,9 @@ app = FastAPI(
 
 # ── 简单内存缓存 ──
 _quote_cache: dict[str, tuple[float, dict[str, Any]]] = {}  # code -> (timestamp, data)
-_CACHE_TTL = 10  # 缓存有效期（秒）
+_search_cache: dict[str, tuple[float, list[dict[str, str]]]] = {}  # query -> (timestamp, results)
+_QUOTE_CACHE_TTL = 60  # 行情缓存有效期（秒）
+_SEARCH_CACHE_TTL = 60  # 搜索缓存有效期（秒）
 
 app.add_middleware(
     CORSMiddleware,
@@ -72,7 +74,7 @@ async def batch_quotes(req: BatchQuoteRequest) -> BatchQuoteResponse:
         code = code.strip()
         if code in _quote_cache:
             ts, data = _quote_cache[code]
-            if now - ts < _CACHE_TTL:
+            if now - ts < _QUOTE_CACHE_TTL:
                 cached_results.append(data)
             else:
                 uncached_codes.append(code)
@@ -80,10 +82,12 @@ async def batch_quotes(req: BatchQuoteRequest) -> BatchQuoteResponse:
             uncached_codes.append(code)
 
     # 新浪行情对 A 股、港股和指数更快，主后端作为补充兜底。
+    # 当前手机版暂不支持美股实时行情，避免 AAPL/TSLA 每次刷新都回退共享后端刷屏。
     if uncached_codes:
-        fresh_results = await _fetch_sina_batch(uncached_codes)
+        supported_codes = [c for c in uncached_codes if not _is_us_stock_code(c)]
+        fresh_results = await _fetch_sina_batch(supported_codes) if supported_codes else []
         found_codes = {r["stock_code"].lower() for r in fresh_results}
-        missing_codes = [c for c in uncached_codes if c.lower() not in found_codes]
+        missing_codes = [c for c in supported_codes if c.lower() not in found_codes]
         if missing_codes:
             fresh_results.extend(await _fetch_main_backend_batch_concurrent(missing_codes))
         for r in fresh_results:
@@ -112,6 +116,7 @@ async def _fetch_sina_batch(codes: list[str]) -> list[dict[str, Any]]:
                 },
             )
             response.raise_for_status()
+            response.encoding = "gbk"
             return _parse_sina_response(response.text, sina_codes)
     except Exception as e:
         print(f"新浪接口失败: {e}")
@@ -143,8 +148,6 @@ def _parse_sina_response(response_text: str, original_codes: list[str]) -> list[
             stock_name = fields[1] or fields[0] or _get_hk_stock_name(sina_code)
             current_price = _safe_float(fields[6] if len(fields) > 6 else "")
             yesterday_close = _safe_float(fields[3] if len(fields) > 3 else "")
-            # 调试日志
-            print(f"港股调试: {sina_code}, 当前价: {current_price}, 昨收: {yesterday_close}, 字段数: {len(fields)}")
             # 自己计算涨跌幅，避免新浪返回的字段为0
             change = round(current_price - yesterday_close, 2) if yesterday_close else 0
             change_percent = (
@@ -173,6 +176,8 @@ def _parse_sina_response(response_text: str, original_codes: list[str]) -> list[
             volume = _safe_int(fields[8] if len(fields) > 8 else "")
             amount = _safe_float(fields[9] if len(fields) > 9 else "")
 
+        if current_price <= 0 and not _is_sina_index_symbol(sina_code):
+            continue
         if current_price <= 0 and yesterday_close <= 0:
             continue
 
@@ -215,6 +220,10 @@ def _to_sina_symbol(code: str) -> str:
 
 def _is_sina_index_symbol(code: str) -> bool:
     return code.startswith("sh000") or code.startswith("sz399")
+
+
+def _is_us_stock_code(code: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z]{1,5}", code.strip()))
 
 
 async def _fetch_main_backend_batch(codes: list[str]) -> list[dict[str, Any]]:
@@ -341,6 +350,13 @@ async def search_stocks(q: str = Query(...)) -> list[dict[str, str]]:
         return []
     
     query = q.strip()
+    cache_key = query.lower()
+    now = time.time()
+    cached = _search_cache.get(cache_key)
+    if cached:
+        ts, results = cached
+        if now - ts < _SEARCH_CACHE_TTL:
+            return results
     
     # 新浪财经搜索接口
     search_url = f"http://suggest3.sinajs.cn/suggest/type=111&key={query}"
@@ -370,13 +386,15 @@ async def search_stocks(q: str = Query(...)) -> list[dict[str, str]]:
                                 normalized_code = code[2:]
                             elif code.startswith("hk"):
                                 normalized_code = "hk" + code[2:].zfill(5)
-                            return [{"code": normalized_code, "name": name}]
+                            results = [{"code": normalized_code, "name": name}]
+                            _search_cache[cache_key] = (now, results)
+                            return results
             
     except Exception as e:
         print(f"搜索失败: {e}")
     
     # 如果新浪接口失败，返回热门股票匹配
-    return [
+    results = [
         stock for stock in [
             {"code": "600519", "name": "贵州茅台"},
             {"code": "300750", "name": "宁德时代"},
@@ -391,6 +409,8 @@ async def search_stocks(q: str = Query(...)) -> list[dict[str, str]]:
             {"code": "TSLA", "name": "特斯拉"},
         ] if query.lower() in stock["name"].lower() or query.lower() in stock["code"].lower()
     ]
+    _search_cache[cache_key] = (now, results)
+    return results
 
 
 # ── 问股代理接口 ──
@@ -399,6 +419,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
     skills: Optional[List[str]] = None
+    mode: str = "fast"
     context: Optional[Dict[str, Any]] = None
 
 

@@ -15,6 +15,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import AboutFeedbackScreen from './src/screens/AboutFeedbackScreen';
 import StockDetailScreen from './src/screens/StockDetailScreen';
 import ToastProvider from './src/components/Toast';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { StyleSheet } from 'react-native';
 import type { RootStackParamList, TabParamList } from './src/types';
 
@@ -166,9 +167,11 @@ function AppContent() {
 export default function App() {
   return (
     <ThemeProvider>
-      <NavigationContainer>
-        <AppContent />
-      </NavigationContainer>
+      <ErrorBoundary name="AppRoot">
+        <NavigationContainer>
+          <AppContent />
+        </NavigationContainer>
+      </ErrorBoundary>
     </ThemeProvider>
   );
 }

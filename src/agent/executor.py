@@ -392,6 +392,20 @@ LEGACY_DEFAULT_CHAT_SYSTEM_PROMPT = """你是一位专注于趋势交易的{mark
 {language_section}
 """
 
+FAST_CHAT_MODE_INSTRUCTIONS = """
+
+## 快速问股模式
+
+当前请求来自手机端快速问股，必须优先速度和稳定性：
+- 只允许使用已提供的快速工具：`get_realtime_quote`、`get_daily_history`、`analyze_trend`、`calculate_ma`。
+- 禁止尝试调用新闻、筹码、板块、大盘、综合情报、回测等未提供工具。
+- 不要调用 `search_stock_news`、`get_chip_distribution`、`get_sector_rankings`、`get_market_indices`。
+- 最多进行两轮工具调用，然后必须基于已有行情、K线、趋势和均线数据直接回答。
+- 如果缺少新闻、筹码或板块数据，只需说明“快速模式未纳入这些数据”，不要继续请求工具。
+- 回答控制在 300～600 字，先给结论，再给关键依据、买点/风险和观察条件。
+"""
+
+
 CHAT_SYSTEM_PROMPT = """你是一位{market_role}投资分析 Agent，拥有数据工具和可切换交易技能，负责解答用户的股票投资问题。
 
 {market_guidelines}
@@ -515,6 +529,8 @@ class AgentExecutor:
         default_skill_policy_section = ""
         if self.default_skill_policy:
             default_skill_policy_section = f"\n{self.default_skill_policy}\n"
+        if (context or {}).get("agent_chat_mode") == "fast":
+            default_skill_policy_section += FAST_CHAT_MODE_INSTRUCTIONS
         report_language = normalize_report_language((context or {}).get("report_language", "zh"))
         stock_code = (context or {}).get("stock_code", "")
         market_role = get_market_role(stock_code, report_language)
@@ -567,6 +583,8 @@ class AgentExecutor:
         default_skill_policy_section = ""
         if self.default_skill_policy:
             default_skill_policy_section = f"\n{self.default_skill_policy}\n"
+        if (context or {}).get("agent_chat_mode") == "fast":
+            default_skill_policy_section += FAST_CHAT_MODE_INSTRUCTIONS
         report_language = normalize_report_language((context or {}).get("report_language", "zh"))
         stock_code = (context or {}).get("stock_code", "")
         market_role = get_market_role(stock_code, report_language)

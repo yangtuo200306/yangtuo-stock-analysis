@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { RouteProp, useRoute } from '@react-navigation/native';
+import type { TabParamList } from '../types';
 import {
   ActivityIndicator,
   Alert,
@@ -13,25 +15,30 @@ import {
   View,
 } from 'react-native';
 import { getMobileBackendUrl } from '../api/client';
-import { showToast } from '../components/Toast';
 import { useTheme, colors } from '../theme';
 
 const ALL_SKILLS = [
-  { id: 'ma', name: '均线' },
-  { id: 'chan', name: '缠论' },
-  { id: 'wave', name: '波浪' },
-  { id: 'hot', name: '热点' },
-  { id: 'event', name: '事件' },
-  { id: 'trend', name: '趋势' },
-  { id: 'growth', name: '成长' },
-  { id: 'expect', name: '预期' },
+  { id: 'bull_trend', name: '趋势' },
+  { id: 'ma_golden_cross', name: '均线' },
+  { id: 'chan_theory', name: '缠论' },
+  { id: 'hot_theme', name: '热点' },
+  { id: 'event_driven', name: '事件' },
+  { id: 'growth_quality', name: '成长' },
 ];
 
 const STEPS = [
-  { key: 'data', label: '获取行情和K线数据' },
-  { key: 'structure', label: '识别结构形态' },
-  { key: 'analyze', label: '生成策略观点' },
+  { key: 'understand', label: '正在理解问题' },
+  { key: 'tools', label: '正在调用工具' },
+  { key: 'answer', label: '正在生成回答' },
 ];
+
+const CHAT_MODES = [
+  { id: 'fast', name: '快速问股', description: '行情、K线、趋势优先' },
+  { id: 'deep', name: '深度分析', description: '加入新闻、筹码等完整工具' },
+] as const;
+
+type ChatMode = typeof CHAT_MODES[number]['id'];
+type AskStockRoute = RouteProp<TabParamList, 'AskStock'>;
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -55,34 +62,68 @@ function updateLastAssistant(
   return [...updated, { role: 'assistant', content, skill }];
 }
 
-function getReadableError(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return '网络错误';
+function getFriendlyAskError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error || '');
+  const lower = message.toLowerCase();
+
+  if (lower.includes('abort') || lower.includes('timeout') || message.includes('超时')) {
+    return '问股响应时间较长，请稍后重试，或切换快速问股。';
+  }
+  if (
+    lower.includes('failed to fetch') ||
+    lower.includes('network') ||
+    lower.includes('econnrefused') ||
+    message.includes('网络')
+  ) {
+    return '网络连接异常，请检查网络后重试。';
+  }
+  if (message.includes('HTTP 401') || message.includes('HTTP 403') || lower.includes('api key')) {
+    return '问股服务鉴权失败，请到设置页检查服务配置。';
+  }
+  if (message.includes('HTTP 404') || message.includes('HTTP 500') || message.includes('HTTP 502') || message.includes('HTTP 503') || message.includes('HTTP 504')) {
+    return '问股服务暂时不可用，请稍后重试。';
+  }
+  if (message.includes('没有返回内容')) {
+    return '问股服务没有返回内容，请稍后重试。';
+  }
+  return '问股服务暂时不可用，请稍后重试。';
 }
 
 export default function AskStockScreen() {
   const { theme } = useTheme();
-  const [selectedSkill, setSelectedSkill] = useState<string>('chan');
-  const [showMore, setShowMore] = useState(false);
+  const route = useRoute<AskStockRoute>();
+  const [selectedSkill, setSelectedSkill] = useState<string>('bull_trend');
+  const [chatMode, setChatMode] = useState<ChatMode>('fast');
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatting, setChatting] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  const [waitSeconds, setWaitSeconds] = useState(0);
   const [pendingSkill, setPendingSkill] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const waitTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     return () => {
       if (stepTimer.current) clearInterval(stepTimer.current);
+      if (waitTimer.current) clearInterval(waitTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    const params = route.params;
+    if (!params?.prefillQuestion) return;
+    setQuestion(params.prefillQuestion);
+  }, [route.params?.prefillQuestion]);
 
   const clearChat = () => setMessages([]);
 
   const startStepAnimation = () => {
     if (stepTimer.current) clearInterval(stepTimer.current);
+    if (waitTimer.current) clearInterval(waitTimer.current);
     setCurrentStep(0);
+    setWaitSeconds(0);
     let i = 0;
     stepTimer.current = setInterval(() => {
       i += 1;
@@ -91,7 +132,10 @@ export default function AskStockScreen() {
         return;
       }
       setCurrentStep(i);
-    }, 6000);
+    }, 10000);
+    waitTimer.current = setInterval(() => {
+      setWaitSeconds(prev => prev + 1);
+    }, 1000);
   };
 
   const handleSkillPress = (skillId: string) => {
@@ -134,65 +178,17 @@ export default function AskStockScreen() {
     }
   };
 
-  const doFallbackChat = async (baseUrl: string, text: string, skill: string) => {
+  const doChatRequest = async (baseUrl: string, text: string, skill: string, mode: ChatMode) => {
     const data = await fetchJsonWithTimeout(`${baseUrl}/api/v1/agent/chat`, {
       message: text,
       session_id: `app_${Date.now()}`,
       skills: skill ? [skill] : undefined,
-    }, 90000);
-    const content = data.success ? data.content : data.error;
+      mode,
+    }, mode === 'fast' ? 90000 : 180000);
+    if (!data.success) throw new Error(data.error || '问股服务暂时不可用');
+    const content = data.content;
     if (!content) throw new Error('问股服务没有返回内容');
     setMessages(prev => updateLastAssistant(prev, content, skill));
-  };
-
-  const doStreamChat = async (baseUrl: string, text: string, skill: string) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60000);
-    let accumulated = '';
-    try {
-      const res = await fetch(`${baseUrl}/api/v1/agent/chat/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          session_id: `app_${Date.now()}`,
-          skills: skill ? [skill] : undefined,
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error(`请求失败 HTTP ${res.status}`);
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error('当前环境不支持流式读取');
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data: ')) continue;
-          const event = JSON.parse(trimmed.slice(6));
-          if (event.type === 'generating' && event.content) {
-            accumulated += event.content;
-            setMessages(prev => updateLastAssistant(prev, accumulated, skill));
-          } else if (event.type === 'done') {
-            if (!event.success) throw new Error(event.error || '分析失败');
-            const finalContent = accumulated || event.content;
-            if (finalContent) setMessages(prev => updateLastAssistant(prev, finalContent, skill));
-            return;
-          } else if (event.type === 'error') {
-            throw new Error(event.message || '分析失败');
-          }
-        }
-      }
-      if (!accumulated) throw new Error('流式响应为空');
-    } finally {
-      clearTimeout(timer);
-    }
   };
 
   const doChat = async () => {
@@ -200,6 +196,7 @@ export default function AskStockScreen() {
     if (!text || chatting) return;
 
     const skill = selectedSkill;
+    const mode = chatMode;
     setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '', skill }]);
     setQuestion('');
     setChatting(true);
@@ -207,21 +204,17 @@ export default function AskStockScreen() {
 
     const baseUrl = await getMobileBackendUrl();
     try {
-      await doStreamChat(baseUrl, text, skill);
-    } catch {
-      showToast('流式问股不可用，已切换为普通问股');
-      try {
-        await doFallbackChat(baseUrl, text, skill);
-      } catch (fallbackError) {
-        setMessages(prev => updateLastAssistant(
-          prev,
-          `请求失败：${getReadableError(fallbackError)}。请检查后端服务和 API 地址。`,
-          skill,
-        ));
-      }
+      await doChatRequest(baseUrl, text, skill, mode);
+    } catch (error) {
+      setMessages(prev => updateLastAssistant(
+        prev,
+        getFriendlyAskError(error),
+        skill,
+      ));
     } finally {
       setChatting(false);
       if (stepTimer.current) clearInterval(stepTimer.current);
+      if (waitTimer.current) clearInterval(waitTimer.current);
     }
   };
 
@@ -232,9 +225,6 @@ export default function AskStockScreen() {
       { text: '取消', style: 'cancel' },
     ]);
   };
-
-  const mainSkills = ALL_SKILLS.slice(0, 7);
-  const moreSkills = ALL_SKILLS.slice(7);
 
   return (
     <KeyboardAvoidingView
@@ -252,7 +242,7 @@ export default function AskStockScreen() {
 
       <View style={[styles.skillBar, { backgroundColor: theme.background }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {mainSkills.map(s => (
+          {ALL_SKILLS.map(s => (
             <TouchableOpacity
               key={s.id}
               style={[
@@ -267,35 +257,31 @@ export default function AskStockScreen() {
               </Text>
             </TouchableOpacity>
           ))}
-          {moreSkills.length > 0 && (
-            <TouchableOpacity
-              style={[styles.skillChip, { backgroundColor: showMore ? colors.primary : theme.inputBackground }]}
-              onPress={() => setShowMore(!showMore)}
-            >
-              <Text style={[styles.skillChipText, { color: showMore ? '#FFF' : theme.textSecondary }]}>更多</Text>
-            </TouchableOpacity>
-          )}
         </ScrollView>
       </View>
 
-      {showMore && moreSkills.length > 0 && (
-        <View style={[styles.morePanel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {moreSkills.map(s => (
-              <TouchableOpacity
-                key={s.id}
-                style={[styles.skillChip, { backgroundColor: selectedSkill === s.id ? colors.primary : theme.inputBackground }]}
-                onPress={() => handleSkillPress(s.id)}
-              >
-                <Text style={[styles.skillChipText, { color: selectedSkill === s.id ? '#FFF' : theme.textSecondary }]}>{s.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      )}
 
       <View style={styles.activeSkillRow}>
         <Text style={[styles.activeSkillText, { color: colors.primary }]}>当前策略: {ALL_SKILLS.find(s => s.id === selectedSkill)?.name || selectedSkill}</Text>
+        {route.params?.stockCode && (
+          <Text style={[styles.stockContextText, { color: theme.textMuted }]}>来自个股详情：{route.params.stockName || route.params.stockCode} {route.params.stockCode}</Text>
+        )}
+      </View>
+
+      <View style={styles.modeSection}>
+        <View style={[styles.modeSwitch, { backgroundColor: theme.inputBackground }]}>
+          {CHAT_MODES.map(mode => (
+            <TouchableOpacity
+              key={mode.id}
+              style={[styles.modeOption, chatMode === mode.id && { backgroundColor: colors.primary }]}
+              onPress={() => setChatMode(mode.id)}
+              disabled={chatting}
+            >
+              <Text style={[styles.modeName, { color: chatMode === mode.id ? '#FFF' : theme.textSecondary }]}>{mode.name}</Text>
+              <Text style={[styles.modeDesc, { color: chatMode === mode.id ? '#FFF' : theme.textMuted }]}>{mode.description}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       <ScrollView
@@ -310,10 +296,10 @@ export default function AskStockScreen() {
             <View style={styles.exampleSection}>
               <Text style={[styles.exampleLabel, { color: theme.textMuted }]}>示例问题:</Text>
               {[
-                ['分析茅台买点', 'chan', '缠论看茅台'],
-                ['宁德时代走势', 'wave', '波浪看宁德'],
-                ['大盘趋势分析', 'trend', '大盘趋势'],
-                ['半导体板块热度', 'hot', '半导体热点'],
+                ['分析茅台买点', 'chan_theory', '缠论看茅台'],
+                ['宁德时代走势', 'bull_trend', '趋势看宁德'],
+                ['大盘趋势分析', 'bull_trend', '大盘趋势'],
+                ['半导体板块热度', 'hot_theme', '半导体热点'],
               ].map(([nextQuestion, skill, label]) => (
                 <TouchableOpacity
                   key={label}
@@ -351,7 +337,8 @@ export default function AskStockScreen() {
                 </>
               ) : (
                 <View>
-                  <Text style={[styles.skillTag, { color: colors.primary }]}>[{ALL_SKILLS.find(s => s.id === selectedSkill)?.name || selectedSkill}] 正在分析...</Text>
+                  <Text style={[styles.skillTag, { color: colors.primary }]}>[{ALL_SKILLS.find(s => s.id === selectedSkill)?.name || selectedSkill}] 分析中</Text>
+                  <Text style={[styles.waitText, { color: theme.textMuted }]}>已等待 {waitSeconds} 秒</Text>
                   {STEPS.map((step, si) => (
                     <View key={step.key} style={styles.stepRow}>
                       <Text style={[styles.stepIcon, { color: si <= currentStep ? colors.down : theme.textMuted }]}>
@@ -360,6 +347,9 @@ export default function AskStockScreen() {
                       <Text style={[styles.stepLabel, { color: si <= currentStep ? theme.text : theme.textMuted }]}>{step.label}</Text>
                     </View>
                   ))}
+                  {waitSeconds >= 30 && (
+                    <Text style={[styles.slowHint, { color: waitSeconds >= 60 ? colors.warning : theme.textMuted }]}>模型响应较慢，可以继续等待，或稍后重试。</Text>
+                  )}
                   <ActivityIndicator size="small" color={colors.primary} style={{ marginTop: 8 }} />
                 </View>
               )}
@@ -415,9 +405,14 @@ const styles = StyleSheet.create({
   skillBar: { paddingVertical: 8, paddingLeft: 12 },
   skillChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, marginRight: 8 },
   skillChipText: { fontSize: 13, fontWeight: '500' },
-  morePanel: { marginHorizontal: 12, borderRadius: 10, padding: 8, elevation: 3, marginBottom: 4, borderWidth: StyleSheet.hairlineWidth },
   activeSkillRow: { paddingHorizontal: 12, paddingBottom: 4 },
   activeSkillText: { fontSize: 12, fontWeight: '500' },
+  stockContextText: { fontSize: 11, marginTop: 3 },
+  modeSection: { paddingHorizontal: 12, paddingBottom: 8 },
+  modeSwitch: { flexDirection: 'row', borderRadius: 12, padding: 3, gap: 3 },
+  modeOption: { flex: 1, borderRadius: 10, paddingVertical: 7, paddingHorizontal: 8, alignItems: 'center' },
+  modeName: { fontSize: 13, fontWeight: '700' },
+  modeDesc: { fontSize: 10, marginTop: 2 },
   bubbleSystem: { alignSelf: 'center', maxWidth: '85%', padding: 10, borderRadius: 8, marginBottom: 8, borderWidth: 1 },
   systemText: { fontSize: 12, textAlign: 'center', lineHeight: 18 },
   chatScroll: { flex: 1 },
@@ -434,6 +429,8 @@ const styles = StyleSheet.create({
   bubbleTextUser: { color: '#FFF', fontSize: 15, lineHeight: 22 },
   bubbleTextAssistant: { fontSize: 14, lineHeight: 22 },
   skillTag: { fontSize: 11, fontWeight: '600', marginBottom: 4 },
+  waitText: { fontSize: 12, marginBottom: 4 },
+  slowHint: { fontSize: 12, lineHeight: 18, marginTop: 8 },
   stepRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   stepIcon: { width: 20, fontSize: 14, textAlign: 'center' },
   stepLabel: { fontSize: 13, marginLeft: 6 },
