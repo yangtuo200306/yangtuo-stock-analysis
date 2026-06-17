@@ -1,9 +1,24 @@
 // ─── API 配置 ──────────────────────────────────────────────
 
-// 手机 BFF 后端地址
-export const API_BASE_URL = 'http://localhost:8001';
-// 共享后端地址
-export const SHARED_API_BASE_URL = 'http://localhost:8000';
+import Constants from 'expo-constants';
+
+/**
+ * 从 app.config.ts extra 字段获取 API 地址
+ * 支持环境变量配置，打包时自动使用正确的服务器地址
+ */
+const extra = Constants.expoConfig?.extra as {
+  apiUrl?: string;
+  bffUrl?: string;
+  env?: string;
+} | undefined;
+
+// 手机 BFF 后端地址 (从配置读取，支持环境变量)
+export const API_BASE_URL = extra?.bffUrl || 'http://localhost:8001';
+// 共享后端地址 (从配置读取，支持环境变量)
+export const SHARED_API_BASE_URL = extra?.apiUrl || 'http://localhost:8000';
+
+// 环境标识
+export const APP_ENV = extra?.env || 'development';
 
 export const API_ENDPOINTS = {
   // 手机 BFF
@@ -11,7 +26,9 @@ export const API_ENDPOINTS = {
   // 共享后端
   stockAnalysis: `${SHARED_API_BASE_URL}/api/v1/stock`,
   history: `${SHARED_API_BASE_URL}/api/v1/history`,
-  watchlist: `${SHARED_API_BASE_URL}/api/v1/watchlist`,
+  watchlist: `${SHARED_API_BASE_URL}/api/v1/stocks/watchlist`,
+  watchlistAdd: `${SHARED_API_BASE_URL}/api/v1/stocks/watchlist/add`,
+  watchlistRemove: `${SHARED_API_BASE_URL}/api/v1/stocks/watchlist/remove`,
   marketReview: `${SHARED_API_BASE_URL}/api/v1/market-review`,
   agentChat: `${SHARED_API_BASE_URL}/api/v1/agent/chat/stream`,
   agentResearch: `${SHARED_API_BASE_URL}/api/v1/agent/research`,

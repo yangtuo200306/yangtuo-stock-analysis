@@ -1,13 +1,22 @@
 import axios, { AxiosError, type AxiosInstance } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { setSecure, getSecure, removeSecure } from "../utils/storage";
 
 const API_BASE_URL_KEY = "@api_base_url";
 const AUTH_TOKEN_KEY = "@auth_token";
 const MOBILE_BACKEND_URL_KEY = "@mobile_backend_url";
 const BFF_API_KEY_KEY = "@bff_api_key";
-const DEFAULT_API_URL = "http://localhost:8000";
-const DEFAULT_MOBILE_BACKEND_URL = "http://localhost:8001";
+
+// 从 app.config.ts extra 字段获取默认 API 地址
+const extra = Constants.expoConfig?.extra as {
+  apiUrl?: string;
+  bffUrl?: string;
+  env?: string;
+} | undefined;
+
+const DEFAULT_API_URL = extra?.apiUrl || "http://localhost:8000";
+const DEFAULT_MOBILE_BACKEND_URL = extra?.bffUrl || "http://localhost:8001";
 
 let baseURL = DEFAULT_API_URL;
 

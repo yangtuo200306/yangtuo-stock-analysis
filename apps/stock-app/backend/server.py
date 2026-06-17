@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import time
@@ -20,6 +21,10 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Stock App Backend (BFF)",
@@ -33,15 +38,45 @@ _search_cache: dict[str, tuple[float, list[dict[str, str]]]] = {}  # query -> (t
 _QUOTE_CACHE_TTL = 60  # 行情缓存有效期（秒）
 _SEARCH_CACHE_TTL = 60  # 搜索缓存有效期（秒）
 
+# 允许的来源（生产环境应配置具体域名）
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*")
+allowed_origins_list = ALLOWED_ORIGINS.split(",") if ALLOWED_ORIGINS else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins_list,
     allow_methods=["*"],
     allow_headers=["*"],
+    max_age=3600,  # 预检请求缓存时间（秒）
 )
 
 # 主后端地址（可通过环境变量覆盖，降级用）
 MAIN_BACKEND_URL = os.getenv("MAIN_BACKEND_URL", "http://localhost:8000")
+
+# ── HTTP 客户端连接池（复用连接以提高性能）──
+_client: httpx.AsyncClient | None = None
+
+async def get_http_client() -> httpx.AsyncClient:
+    """获取复用的 HTTP 客户端连接池"""
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(
+            timeout=180.0,
+            limits=httpx.Limits(
+                max_connections=10,
+                max_keepalive_connections=5,
+            ),
+            headers={"Content-Type": "application/json"},
+        )
+    return _client
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时清理资源"""
+    global _client
+    if _client is not None:
+        await _client.aclose()
 
 
 # ── 数据结构 ──
@@ -119,7 +154,7 @@ async def _fetch_sina_batch(codes: list[str]) -> list[dict[str, Any]]:
             response.encoding = "gbk"
             return _parse_sina_response(response.text, sina_codes)
     except Exception as e:
-        print(f"新浪接口失败: {e}")
+        logger.error(f"新浪接口失败: {e}")
         return []
 
 
@@ -287,7 +322,7 @@ async def _fetch_single_from_main(client: httpx.AsyncClient, code: str) -> dict[
                 "amount": data.get("amount", 0.0),
             }
     except Exception as e:
-        print(f"主后端获取 {code} 失败: {e}")
+        logger.error(f"主后端获取 {code} 失败: {e}")
     return None
 
 
@@ -391,7 +426,7 @@ async def search_stocks(q: str = Query(...)) -> list[dict[str, str]]:
                             return results
             
     except Exception as e:
-        print(f"搜索失败: {e}")
+        logger.error(f"搜索失败: {e}")
     
     # 如果新浪接口失败，返回热门股票匹配
     results = [
@@ -426,9 +461,9 @@ class ChatRequest(BaseModel):
 @app.post("/api/v1/agent/chat/stream")
 async def agent_chat_stream(request: ChatRequest):
     """代理问股流式接口到主后端"""
-    print(f"=== 收到流式问股请求 ===")
+    logger.info("收到流式问股请求")
     body = request.model_dump()
-    print(f"请求体: {body}")
+    logger.debug(f"请求体: {body}")
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             async with client.stream(
@@ -446,37 +481,49 @@ async def agent_chat_stream(request: ChatRequest):
 
                 return StreamingResponse(stream_generator(), media_type="text/event-stream")
     except Exception as e:
-        print(f"流式问股代理失败: {e}")
+        logger.error(f"流式问股代理失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/v1/agent/chat")
 async def agent_chat(request: ChatRequest) -> dict:
     """代理问股接口到主后端"""
-    print(f"=== 收到普通问股请求 ===")
+    logger.info("收到普通问股请求")
     body = request.model_dump()
-    print(f"请求体: {body}")
+    logger.debug(f"请求体: {body}")
     try:
-        async with httpx.AsyncClient(timeout=180.0) as client:
-            response = await client.post(
-                f"{MAIN_BACKEND_URL}/api/v1/agent/chat",
-                json=body,
-                headers={"Content-Type": "application/json"},
-                timeout=180.0,
-            )
-            response.raise_for_status()
-            print(f"问股代理成功，响应状态码: {response.status_code}")
-            return response.json()
+        client = await get_http_client()
+        response = await client.post(
+            f"{MAIN_BACKEND_URL}/api/v1/agent/chat",
+            json=body,
+        )
+        response.raise_for_status()
+        logger.info(f"问股代理成功，响应状态码: {response.status_code}")
+        return response.json()
     except Exception as e:
-        print(f"问股代理失败: {type(e).__name__}: {str(e)}")
+        logger.error(f"问股代理失败: {type(e).__name__}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── 健康检查 ──
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok", "main_backend": MAIN_BACKEND_URL}
+async def health() -> dict[str, str | bool]:
+    """健康检查 - 同时检查主后端是否可用"""
+    main_backend_status = False
+    try:
+        client = await get_http_client()
+        response = await client.get(f"{MAIN_BACKEND_URL}/health")
+        main_backend_status = response.status_code == 200
+    except Exception as e:
+        logger.error(f"主后端健康检查失败: {e}")
+    
+    return {
+        "status": "ok",
+        "main_backend": MAIN_BACKEND_URL,
+        "main_backend_available": main_backend_status,
+        "bff_version": "0.3.0"
+    }
 
 
 if __name__ == "__main__":
